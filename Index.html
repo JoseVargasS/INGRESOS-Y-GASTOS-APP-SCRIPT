@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+  
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- ✅ ICONO DE LA APP CORREGIDO (Thumbnail para estabilidad) -->
+  <link rel="icon" type="image/png" href="https://drive.google.com/thumbnail?id=1OCe94doF-xb67RbXdG1d8EzPSM6NBGyS&sz=w192">
+  <link rel="apple-touch-icon" sizes="192x192" href="https://drive.google.com/thumbnail?id=1OCe94doF-xb67RbXdG1d8EzPSM6NBGyS&sz=w192">
+  <link rel="apple-touch-icon" sizes="180x180" href="https://drive.google.com/thumbnail?id=1OCe94doF-xb67RbXdG1d8EzPSM6NBGyS&sz=w180">
+  <link rel="shortcut icon" href="https://drive.google.com/thumbnail?id=1OCe94doF-xb67RbXdG1d8EzPSM6NBGyS&sz=w128">
+  
+  <!-- Meta tags para PWA -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Bucks Manager">
+  
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
+  
+  <?!= include('Styles'); ?>
+  </head>
+  <body>
+    <div class="app-container">
+      <!-- Mobile Overlay -->
+      <div id="sidebarOverlay" class="sidebar-overlay hidden"></div>
+
+      <!-- Toast Container -->
+      <div id="toastContainer" class="toast-container"></div>
+
+      <!-- Sidebar -->
+      <aside class="sidebar" id="appSidebar">
+        <div class="logo-area">
+          <div class="logo-icon">
+             <img src="https://drive.google.com/thumbnail?id=1OCe94doF-xb67RbXdG1d8EzPSM6NBGyS&sz=w500" alt="Logo">
+          </div>
+          <h1>Bucks Manager</h1>
+          <p>Control de gastos</p>
+        </div>
+
+        <div class="nav-section" id="nav-section-period">
+          <h3>PERÍODO</h3>
+          <!-- Custom Year Dropdown -->
+          <div class="custom-dropdown year-custom-dropdown" id="yearDropdownWrapper">
+              <div class="dropdown-selected year-head" id="yearSelectedHead">
+                  <span id="yearSelectedText">2026</span>
+                  <i class="fa-solid fa-chevron-down"></i>
+              </div>
+              <div class="dropdown-options hidden" id="yearDropdownOptions">
+                  <!-- JS Injected -->
+              </div>
+          </div>
+          <!-- Hidden input to maintain ID reference for value reading -->
+          <input type="hidden" id="yearSelect" value="2026">
+
+          
+          <div class="month-navigation">
+            <button id="prevMonthBtn" class="nav-arrow"><i class="fa-solid fa-chevron-left"></i></button>
+            <span id="currentMonthDisplay">Enero</span>
+            <button id="nextMonthBtn" class="nav-arrow"><i class="fa-solid fa-chevron-right"></i></button>
+          </div>
+          
+          <button id="goToCurrentMonthBtn" class="btn-outlined"><i class="fa-solid fa-calendar"></i> Ir a mes actual</button>
+        </div>
+
+        <div class="nav-section">
+          <h3>VISTA</h3>
+          <nav class="nav-menu">
+            <button class="nav-item active" data-tab="expenses"><i class="fa-solid fa-table"></i> Tabla de Gastos</button>
+            <button class="nav-item" data-tab="summary"><i class="fa-solid fa-chart-column"></i> Resumen Mensual</button>
+            <button class="nav-item" data-tab="charts"><i class="fa-solid fa-chart-line"></i> Gráficos Anuales</button>
+          </nav>
+        </div>
+
+        <!-- Quick Months Section -->
+        <div class="nav-section">
+            <h3>MESES RÁPIDOS</h3>
+            <div class="quick-months-grid">
+                <button class="month-chip" data-month="0">Ene</button>
+                <button class="month-chip" data-month="1">Feb</button>
+                <button class="month-chip" data-month="2">Mar</button>
+                <button class="month-chip" data-month="3">Abr</button>
+                <button class="month-chip" data-month="4">May</button>
+                <button class="month-chip" data-month="5">Jun</button>
+                <button class="month-chip" data-month="6">Jul</button>
+                <button class="month-chip" data-month="7">Ago</button>
+                <button class="month-chip" data-month="8">Sep</button>
+                <button class="month-chip" data-month="9">Oct</button>
+                <button class="month-chip" data-month="10">Nov</button>
+                <button class="month-chip" data-month="11">Dic</button>
+            </div>
+        </div>
+        
+        <div class="footer-note">
+           <i class="fa-solid fa-sd-card"></i> Los datos se guardan en tu hoja de Google
+        </div>
+      </aside>
+
+      <!-- Main Content -->
+      <main class="main-content">
+        <!-- Header -->
+        <header class="top-bar">
+          <div class="header-left">
+            <!-- Hamburger Menu -->
+            <button id="sidebarToggle" class="sidebar-toggle"><i class="fa-solid fa-bars"></i></button>
+            <div class="header-title">
+                <h2 id="pageTitle">Tabla de Gastos</h2>
+                <p id="pageSubtitle">Enero 2026</p>
+            </div>
+          </div>
+          
+          <div class="header-stats">
+            <div class="stat-card income">
+              <div class="stat-icon-wrapper">
+                <i class="fa-solid fa-arrow-trend-up stat-icon"></i>
+              </div>
+              <div class="stat-content">
+                <span class="label">Ingresos</span>
+                <span class="value" id="headerIncome">+ S/ 0.00</span>
+              </div>
+            </div>
+            <div class="stat-card expense">
+              <div class="stat-icon-wrapper">
+                <i class="fa-solid fa-arrow-trend-down stat-icon"></i>
+              </div>
+              <div class="stat-content">
+                <span class="label">Gastos</span>
+                <span class="value" id="headerExpense">- S/ 0.00</span>
+              </div>
+            </div>
+            <div class="stat-card balance">
+              <div class="stat-icon-wrapper">
+                <i class="fa-solid fa-wallet stat-icon"></i>
+              </div>
+              <div class="stat-content">
+                <span class="label">Balance</span>
+                <span class="value" id="headerBalance">+ S/ 0.00</span>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <!-- Mobile Controls (Visible only on mobile) -->
+        <div class="mobile-controls">
+            <select id="yearSelectMobile" class="year-select-mobile">
+              <option value="2026">2026</option>
+              <option value="2025">2025</option>
+              <option value="2024">2024</option>
+              <option value="2023">2023</option>
+              <option value="2022">2022</option>
+            </select>
+            
+            <div class="month-nav-mobile">
+               <button id="prevMonthBtnMobile"><i class="fa-solid fa-chevron-left"></i></button>
+               <span id="currentMonthDisplayMobile">Enero</span>
+               <button id="nextMonthBtnMobile"><i class="fa-solid fa-chevron-right"></i></button>
+            </div>
+
+            <button id="goToCurrentMonthBtnMobile" class="btn-icon-mobile"><i class="fa-solid fa-calendar-day"></i></button>
+        </div>
+
+        <!-- Content Views -->
+        <div id="view-expenses" class="content-view active">
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th data-sort="date">FECHA <i class="fa-solid fa-sort-down"></i></th>
+                  <th data-sort="amount">MONTO <i class="fa-solid fa-sort"></i></th>
+                  <th data-sort="detail">DETALLE <i class="fa-solid fa-sort"></i></th>
+                  <th data-sort="type">TIPO <i class="fa-solid fa-sort"></i></th>
+                  <th>ACCIÓN</th>
+                </tr>
+              </thead>
+              <tbody id="transactionsTableBody">
+                <!-- Rows injected here -->
+                <tr>
+                  <td colspan="5" class="loading-text">
+                    <div class="loading-spinner"></div>
+                    Cargando datos...
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="view-summary" class="content-view">
+          <div class="summary-container">
+            <h3>Resumen Anual</h3>
+            <div class="table-container">
+              <table class="summary-table">
+                <thead>
+                  <tr>
+                    <th>Mes</th>
+                    <th>Ing. Frec.</th>
+                    <th>Ing. No Frec.</th>
+                    <th>Gasto Frec.</th>
+                    <th>Gasto No Frec.</th>
+                    <th>Neto</th>
+                  </tr>
+                </thead>
+                <tbody id="summaryTableBody">
+                   <!-- Summary rows -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div id="view-charts" class="content-view">
+          <div class="chart-controls">
+              <select id="chartMetricSelect" class="chart-metric-select">
+                  <option value="totalExpense">Gasto Total</option>
+                  <option value="freqExpense">Gasto Frecuente</option>
+                  <option value="nonFreqExpense">Gasto No Frecuente</option>
+                  <option value="totalIncome">Ingreso Total</option>
+                  <option value="freqIncome">Ingreso Frecuente</option>
+                  <option value="nonFreqIncome">Ingreso No Frecuente</option>
+                  <option value="netMonthly">Neto Mensual</option>
+              </select>
+          </div>
+          <div class="chart-container">
+             <canvas id="annualChart"></canvas>
+          </div>
+        </div>
+
+      </main>
+
+      <!-- FAB -->
+      <button class="fab" id="fabAdd">
+        <i class="fa-solid fa-plus"></i>
+        <span class="fab-tooltip">Nuevo</span>
+      </button>
+    </div>
+
+    <!-- Modal -->
+    <div id="addModal" class="modal-overlay hidden">
+      <div class="modal">
+        <div class="modal-header">
+          <h3 id="modalTitle"><i class="fa-solid fa-calculator"></i> Nuevo Gasto</h3>
+          <button class="close-modal" id="closeModal"><i class="fa-solid fa-times"></i></button>
+        </div>
+        <div class="modal-body">
+          <form id="addForm">
+            <!-- Hidden ID for Editing -->
+            <input type="hidden" id="editRowId" value="">
+
+            <div class="form-group">
+              <label>Fecha</label>
+              <div class="date-input-wrapper">
+                  <input type="date" id="inputDate" required>
+                  <i class="fa-regular fa-calendar" id="calendarIcon"></i>
+              </div>
+            </div>
+            
+             <div class="form-group">
+              <label>Tipo</label>
+              <div class="custom-dropdown" id="typeDropdown">
+                  <div class="dropdown-selected" id="dropdownSelected">
+                    <div class="selected-content">
+                        <span class="dot-indicator" id="selectedDot"></span>
+                        <span id="selectedText">Seleccionar Tipo</span>
+                    </div>
+                    <i class="fa-solid fa-chevron-down"></i>
+                  </div>
+                  <div class="dropdown-options hidden" id="dropdownOptions">
+                     <!-- Options injected by JS -->
+                  </div>
+              </div>
+              <!-- Hidden input to store value -->
+              <input type="hidden" id="inputType" value="GASTO NO FRECUENTE">
+            </div>
+
+             <div class="form-group">
+              <label>Monto <span class="label-hint">(puedes hacer operaciones: + - * /)</span></label>
+              <div class="input-with-icon">
+                  <span class="currency-symbol">S/</span>
+                  <input type="text" id="inputAmount" placeholder="Ej: 100+50+25" autocomplete="off" inputmode="decimal" required>
+                  <span id="mathPreviewResult"></span>
+              </div>
+              <div class="tips"><i class="fa-regular fa-lightbulb"></i> Tips: "100+50+25" para sumar, "200*2" para multiplicar</div>
+            </div>
+
+            <div class="form-group">
+              <label>Detalle</label>
+              <input type="text" id="inputDetail" placeholder="Ej: Compra en supermercado" required>
+            </div>
+
+            <div class="modal-actions">
+              <button type="button" class="btn-cancel" id="btnCancel"><i class="fa-solid fa-times"></i> Cancelar</button>
+              <button type="submit" class="btn-save" id="btnSubmit"><i class="fa-solid fa-save"></i> Agregar</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div id="deleteModal" class="modal-overlay hidden">
+      <div class="modal modal-small">
+        <div class="modal-header">
+          <h3><i class="fa-solid fa-triangle-exclamation"></i> Confirmar Eliminación</h3>
+        </div>
+        <div class="modal-body">
+          <p class="confirm-text">¿Estás seguro de que deseas eliminar este registro?</p>
+          <div class="modal-actions">
+            <button type="button" class="btn-cancel" id="btnCancelDelete"><i class="fa-solid fa-times"></i> Cancelar</button>
+            <button type="button" class="btn-delete" id="btnConfirmDelete"><i class="fa-solid fa-trash"></i> Eliminar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <?!= include('Scripts'); ?>
+  </body>
+</html>

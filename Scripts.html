@@ -1,0 +1,1195 @@
+<script>
+// ============================================
+// BUCKS MANAGER - SCRIPTS MEJORADOS
+// ============================================
+
+// Global State
+var currentYear = 2026;
+var currentMonth = 0;
+var transactionCache = [];
+var summaries = [];
+var currentSort = { col: 'date', order: 'desc' };
+var deleteRowId = null;
+var myChart = null;
+
+const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+
+// DOM Elements
+const tabButtons = document.querySelectorAll('.nav-item');
+const contentViews = document.querySelectorAll('.content-view');
+const fabAdd = document.getElementById('fabAdd');
+const addModal = document.getElementById('addModal');
+const deleteModal = document.getElementById('deleteModal');
+const closeModal = document.getElementById('closeModal');
+const btnCancel = document.getElementById('btnCancel');
+const btnCancelDelete = document.getElementById('btnCancelDelete');
+const btnConfirmDelete = document.getElementById('btnConfirmDelete');
+const addForm = document.getElementById('addForm');
+const inputAmount = document.getElementById('inputAmount');
+const inputType = document.getElementById('inputType');
+
+// Navigation
+const prevMonthBtn = document.getElementById('prevMonthBtn');
+const nextMonthBtn = document.getElementById('nextMonthBtn');
+const currentMonthDisplay = document.getElementById('currentMonthDisplay');
+const goToCurrentMonthBtn = document.getElementById('goToCurrentMonthBtn');
+const yearSelect = document.getElementById('yearSelect');
+const quickMonthChips = document.querySelectorAll('.month-chip');
+
+// Mobile Navigation
+const yearSelectMobile = document.getElementById('yearSelectMobile');
+const prevMonthBtnMobile = document.getElementById('prevMonthBtnMobile');
+const nextMonthBtnMobile = document.getElementById('nextMonthBtnMobile');
+const currentMonthDisplayMobile = document.getElementById('currentMonthDisplayMobile');
+const goToCurrentMonthBtnMobile = document.getElementById('goToCurrentMonthBtnMobile');
+
+// Sidebar
+const sidebarToggle = document.getElementById('sidebarToggle');
+const appSidebar = document.getElementById('appSidebar');
+const sidebarOverlay = document.getElementById('sidebarOverlay');
+
+// ============================================
+// INICIALIZACIÓN
+// ============================================
+document.addEventListener('DOMContentLoaded', function() {
+  const now = new Date();
+  currentYear = now.getFullYear();
+  currentMonth = now.getMonth();
+  
+  updateYearUI(currentYear);
+  if(yearSelectMobile) yearSelectMobile.value = currentYear;
+  
+  updateHeaderDate();
+  loadTransactions();
+  loadSummary();
+  setupEventListeners();
+});
+
+// ============================================
+// TOAST NOTIFICATIONS
+// ============================================
+function showToast(message, type = 'info', title = '') {
+  const container = document.getElementById('toastContainer');
+  
+  const icons = {
+    success: 'fa-check-circle',
+    error: 'fa-exclamation-circle',
+    info: 'fa-info-circle'
+  };
+  
+  const titles = {
+    success: title || 'Éxito',
+    error: title || 'Error',
+    info: title || 'Información'
+  };
+  
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  toast.innerHTML = `
+    <div class="toast-icon">
+      <i class="fa-solid ${icons[type]}"></i>
+    </div>
+    <div class="toast-content">
+      <div class="toast-title">${titles[type]}</div>
+      <div class="toast-message">${message}</div>
+    </div>
+    <button class="toast-close" onclick="this.parentElement.remove()">
+      <i class="fa-solid fa-times"></i>
+    </button>
+  `;
+  
+  container.appendChild(toast);
+  
+  // Auto-remove after 4 seconds
+  setTimeout(() => {
+    toast.classList.add('hiding');
+    setTimeout(() => toast.remove(), 300);
+  }, 4000);
+}
+
+// ============================================
+// EVENT LISTENERS
+// ============================================
+function setupEventListeners() {
+  // Sidebar Mobile Toggle
+  sidebarToggle.addEventListener('click', () => {
+    appSidebar.classList.add('open');
+    sidebarOverlay.classList.remove('hidden');
+  });
+  
+  sidebarOverlay.addEventListener('click', () => {
+    appSidebar.classList.remove('open');
+    sidebarOverlay.classList.add('hidden');
+  });
+
+  // Navigation
+  prevMonthBtn.addEventListener('click', () => changeMonth(-1));
+  nextMonthBtn.addEventListener('click', () => changeMonth(1));
+  
+  goToCurrentMonthBtn.addEventListener('click', () => {
+    const now = new Date();
+    currentYear = now.getFullYear();
+    currentMonth = now.getMonth();
+    updateYearUI(currentYear);
+    if(yearSelectMobile) yearSelectMobile.value = currentYear;
+    
+    updateHeaderDate();
+    loadTransactions();
+    showToast(`Navegando a ${monthNames[currentMonth]} ${currentYear}`, 'info');
+  });
+  
+  // Custom Year Dropdown Setup
+  setupYearDropdown();
+  
+  // Mobile Year Select Listener
+  if (yearSelectMobile) {
+    yearSelectMobile.addEventListener('change', () => {
+      currentYear = parseInt(yearSelectMobile.value);
+      updateYearUI(currentYear);
+      updateHeaderDate();
+      loadTransactions();
+    });
+  }
+
+  if (prevMonthBtnMobile) prevMonthBtnMobile.addEventListener('click', () => changeMonth(-1));
+  if (nextMonthBtnMobile) nextMonthBtnMobile.addEventListener('click', () => changeMonth(1));
+  
+  if (goToCurrentMonthBtnMobile) {
+    goToCurrentMonthBtnMobile.addEventListener('click', () => {
+      const now = new Date();
+      currentYear = now.getFullYear();
+      currentMonth = now.getMonth();
+      
+      updateYearUI(currentYear);
+      if(yearSelectMobile) yearSelectMobile.value = currentYear;
+
+      updateHeaderDate();
+      loadTransactions();
+    });
+  }
+  
+  // Quick Months
+  quickMonthChips.forEach(chip => {
+    chip.addEventListener('click', () => {
+      currentMonth = parseInt(chip.getAttribute('data-month'));
+      updateHeaderDate();
+      loadTransactions();
+      
+      // Close sidebar on mobile
+      if (window.innerWidth <= 768) {
+        appSidebar.classList.remove('open');
+        sidebarOverlay.classList.add('hidden');
+      }
+    });
+  });
+
+  // Tabs
+  tabButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      tabButtons.forEach(b => b.classList.remove('active'));
+      contentViews.forEach(v => v.classList.remove('active'));
+      
+      btn.classList.add('active');
+      const tabName = btn.getAttribute('data-tab');
+      document.getElementById('view-' + tabName).classList.add('active');
+      
+      // Update page title
+      const titles = {
+        'expenses': 'Tabla de Gastos',
+        'summary': 'Resumen Mensual',
+        'charts': 'Gráficos Anuales'
+      };
+      document.getElementById('pageTitle').textContent = titles[tabName];
+      
+      if (tabName === 'charts') {
+        setTimeout(renderCharts, 100);
+      }
+    });
+  });
+  
+  // Sorting Headers
+  document.querySelectorAll('th[data-sort]').forEach(th => {
+    th.addEventListener('click', () => {
+      const col = th.getAttribute('data-sort');
+      if (currentSort.col === col) {
+        currentSort.order = currentSort.order === 'desc' ? 'asc' : 'desc';
+      } else {
+        currentSort.col = col;
+        currentSort.order = 'desc';
+      }
+      sortAndRender();
+    });
+  });
+
+  // Modal
+  fabAdd.addEventListener('click', () => openModal());
+
+  const hideModal = () => {
+    addModal.classList.add('hidden');
+    setTimeout(() => addForm.reset(), 300);
+  };
+  
+  closeModal.addEventListener('click', hideModal);
+  btnCancel.addEventListener('click', hideModal);
+  
+  // Delete Modal
+  btnCancelDelete.addEventListener('click', () => {
+    deleteModal.classList.add('hidden');
+    deleteRowId = null;
+  });
+  
+  btnConfirmDelete.addEventListener('click', () => {
+    if (deleteRowId) {
+      confirmDelete(deleteRowId);
+    }
+  });
+
+  // Math Input Logic
+  inputAmount.addEventListener('input', () => {
+    const val = inputAmount.value;
+    const result = calculateExpression(val);
+    
+    const previewEl = document.getElementById('mathPreviewResult');
+    
+    if (result !== null && !isNaN(result) && isFinite(result)) {
+      if (val.match(/[+\-*/]/)) {
+        previewEl.textContent = '= ' + result.toFixed(2);
+        previewEl.style.display = 'block';
+        
+        // CORRECCIÓN: Color dinámico según el signo
+        if (result < 0) {
+          previewEl.style.color = 'var(--accent-red)';
+        } else if (result > 0) {
+          previewEl.style.color = 'var(--accent-green)';
+        } else {
+          previewEl.style.color = 'var(--text-primary)';
+        }
+      } else {
+        previewEl.style.display = 'none';
+      }
+      
+      if (editMode === false) {
+        const calculatedType = result > 0 ? 'INGRESO NO FRECUENTE' : 'GASTO NO FRECUENTE';
+        if (window.setDropdownValue) {
+          window.setDropdownValue(calculatedType);
+        } else {
+          inputType.value = calculatedType;
+        }
+      }
+    } else {
+      previewEl.textContent = '';
+      previewEl.style.display = 'none';
+    }
+  });
+
+  // Chart Filter Listener
+  const chartMetricSelect = document.getElementById('chartMetricSelect');
+  if (chartMetricSelect) {
+    chartMetricSelect.addEventListener('change', () => {
+      renderCharts();
+    });
+  }
+
+  // Form Submit
+  addForm.addEventListener('submit', handleFormSubmit);
+  
+  // Custom Dropdown Logic
+  setupCustomDropdown();
+  
+  // Date Picker Input Trigger
+  const dateInput = document.getElementById('inputDate');
+  const calendarIcon = document.getElementById('calendarIcon');
+  if (calendarIcon && dateInput.showPicker) {
+    calendarIcon.addEventListener('click', () => {
+      dateInput.showPicker();
+    });
+  }
+  
+  // Close modals on escape key
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      addModal.classList.add('hidden');
+      deleteModal.classList.add('hidden');
+      appSidebar.classList.remove('open');
+      sidebarOverlay.classList.add('hidden');
+    }
+  });
+  
+  // Close dropdowns on outside click
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.custom-dropdown')) {
+      document.querySelectorAll('.dropdown-options').forEach(el => {
+        el.classList.add('hidden');
+      });
+      document.querySelectorAll('.dropdown-selected').forEach(el => {
+        el.classList.remove('active');
+      });
+    }
+  });
+}
+
+// ============================================
+// CUSTOM DROPDOWN
+// ============================================
+function setupCustomDropdown() {
+  const dropdown = document.getElementById('typeDropdown');
+  const selectedEl = document.getElementById('dropdownSelected');
+  const optionsContainer = document.getElementById('dropdownOptions');
+  const hiddenInput = document.getElementById('inputType');
+  const selectedText = document.getElementById('selectedText');
+  const selectedDot = document.getElementById('selectedDot');
+  
+  const options = [
+    { val: 'GASTO NO FRECUENTE', label: 'Gasto No Frecuente', color: 'dot-yellow' },
+    { val: 'GASTO FRECUENTE', label: 'Gasto Frecuente', color: 'dot-red' },
+    { val: 'INGRESO NO FRECUENTE', label: 'Ingreso No Frecuente', color: 'dot-green' },
+    { val: 'INGRESO FRECUENTE', label: 'Ingreso Frecuente', color: 'dot-blue' }
+  ];
+  
+  optionsContainer.innerHTML = '';
+  options.forEach(opt => {
+    const div = document.createElement('div');
+    // AGREGADO: Clase específica para sombra/color
+    div.className = `dropdown-option opt-${opt.val.toLowerCase().replace(/\s+/g, '-')}`;
+    div.dataset.value = opt.val;
+    div.innerHTML = `<span class="dot-indicator ${opt.color}"></span> ${opt.label}`;
+    div.addEventListener('click', () => selectOption(opt));
+    optionsContainer.appendChild(div);
+  });
+  
+  selectedEl.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isHidden = optionsContainer.classList.contains('hidden');
+    
+    // Close all other dropdowns
+    document.querySelectorAll('.dropdown-options').forEach(el => el.classList.add('hidden'));
+    document.querySelectorAll('.dropdown-selected').forEach(el => el.classList.remove('active'));
+    
+    if (isHidden) {
+      optionsContainer.classList.remove('hidden');
+      selectedEl.classList.add('active');
+    } else {
+      optionsContainer.classList.add('hidden');
+      selectedEl.classList.remove('active');
+    }
+  });
+  
+  window.selectOption = function(optObj) {
+    hiddenInput.value = optObj.val;
+    selectedText.textContent = optObj.label;
+    selectedDot.className = 'dot-indicator ' + optObj.color;
+    
+    // Update visual selection
+    document.querySelectorAll('.dropdown-option').forEach(el => {
+      el.classList.toggle('selected', el.dataset.value === optObj.val);
+    });
+    
+    optionsContainer.classList.add('hidden');
+    selectedEl.classList.remove('active');
+  };
+  
+  const initial = options.find(o => o.val === hiddenInput.value) || options[0];
+  selectOption(initial);
+  
+  window.setDropdownValue = function(val) {
+    const found = options.find(o => o.val === val);
+    if (found) selectOption(found);
+  };
+}
+
+// ============================================
+// YEAR DROPDOWN
+// ============================================
+function setupYearDropdown() {
+  const wrapper = document.getElementById('yearDropdownWrapper');
+  const head = document.getElementById('yearSelectedHead');
+  const optionsContainer = document.getElementById('yearDropdownOptions');
+  
+  const years = [2026, 2025, 2024, 2023, 2022];
+  
+  optionsContainer.innerHTML = '';
+  years.forEach(y => {
+    const div = document.createElement('div');
+    div.className = 'dropdown-option';
+    div.innerHTML = `<span>${y}</span> <i class="fa-solid fa-check" style="opacity: ${currentYear === y ? 1 : 0}; color: var(--accent-green);"></i>`;
+    
+    div.addEventListener('click', () => {
+      updateYearUI(y);
+      if(yearSelectMobile) yearSelectMobile.value = y;
+      updateHeaderDate();
+      loadTransactions();
+      
+      Array.from(optionsContainer.children).forEach(child => {
+        const icon = child.querySelector('.fa-check');
+        if(icon) icon.style.opacity = child.textContent.includes(y.toString()) ? '1' : '0';
+      });
+      
+      showToast(`Año cambiado a ${y}`, 'info');
+    });
+    
+    optionsContainer.appendChild(div);
+  });
+  
+  head.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isHidden = optionsContainer.classList.contains('hidden');
+    
+    document.querySelectorAll('.dropdown-options').forEach(el => el.classList.add('hidden'));
+    
+    if (isHidden) {
+      optionsContainer.classList.remove('hidden');
+      head.classList.add('active');
+    } else {
+      optionsContainer.classList.add('hidden');
+      head.classList.remove('active');
+    }
+  });
+  
+  document.addEventListener('click', (e) => {
+    if (!wrapper.contains(e.target)) {
+      optionsContainer.classList.add('hidden');
+      head.classList.remove('active');
+    }
+  });
+}
+
+// ============================================
+// HELPERS
+// ============================================
+function updateYearUI(year) {
+  const hidden = document.getElementById('yearSelect');
+  const text = document.getElementById('yearSelectedText');
+  if(hidden) hidden.value = year;
+  if(text) text.textContent = year;
+  currentYear = year;
+}
+
+function updateHeaderDate() {
+  currentMonthDisplay.textContent = monthNames[currentMonth];
+  if(currentMonthDisplayMobile) currentMonthDisplayMobile.textContent = monthNames[currentMonth];
+  document.getElementById('pageSubtitle').textContent = monthNames[currentMonth] + ' ' + currentYear;
+  
+  quickMonthChips.forEach(chip => {
+    chip.classList.toggle('active', parseInt(chip.getAttribute('data-month')) === currentMonth);
+  });
+}
+
+function changeMonth(delta) {
+  currentMonth += delta;
+  if (currentMonth > 11) {
+    currentMonth = 0;
+    currentYear++;
+    updateYearUI(currentYear);
+    if(yearSelectMobile) yearSelectMobile.value = currentYear;
+  } else if (currentMonth < 0) {
+    currentMonth = 11;
+    currentYear--;
+    updateYearUI(currentYear);
+    if(yearSelectMobile) yearSelectMobile.value = currentYear;
+  }
+  updateHeaderDate();
+  loadTransactions();
+}
+
+function calculateExpression(expression) {
+  if (!expression) return 0;
+  const cleanExpr = expression.replace(/[^0-9+\-*/.()]/g, '');
+  try {
+    return new Function('return ' + cleanExpr)();
+  } catch (e) {
+    return null;
+  }
+}
+
+function formatMoney(val) {
+  if (!val) return 'S/ 0.00';
+  const num = Number(val);
+  if (isNaN(num)) return val;
+  const prefix = num >= 0 ? 'S/ ' : '-S/ ';
+  return prefix + Math.abs(num).toFixed(2);
+}
+
+function abbreviateType(type) {
+  if (!type) return '';
+  const map = {
+    'GASTO NO FRECUENTE': 'G. No Frec.',
+    'GASTO FRECUENTE': 'G. Frec.',
+    'INGRESO NO FRECUENTE': 'Ing. No Frec.',
+    'INGRESO FRECUENTE': 'Ing. Frec.'
+  };
+  return map[type] || type;
+}
+
+// ============================================
+// SORTING
+// ============================================
+function sortAndRender() {
+  if (!transactionCache) return;
+  
+  transactionCache.sort((a, b) => {
+    let valA, valB;
+    
+    if (currentSort.col === 'date') {
+      valA = new Date(a.rawDate).getTime();
+      valB = new Date(b.rawDate).getTime();
+    } else if (currentSort.col === 'amount') {
+      valA = parseFloat(a.amount);
+      valB = parseFloat(b.amount);
+    } else if (currentSort.col === 'type') {
+      valA = a.type.toLowerCase();
+      valB = b.type.toLowerCase();
+    } else if (currentSort.col === 'detail') {
+      valA = a.detail.toLowerCase();
+      valB = b.detail.toLowerCase();
+    }
+    
+    if (valA < valB) return currentSort.order === 'asc' ? -1 : 1;
+    if (valA > valB) return currentSort.order === 'asc' ? 1 : -1;
+    return 0;
+  });
+  
+  document.querySelectorAll('th i').forEach(icon => icon.className = 'fa-solid fa-sort');
+  const activeTh = document.querySelector(`th[data-sort="${currentSort.col}"]`);
+  if (activeTh) {
+    const icon = activeTh.querySelector('i');
+    if (icon) {
+      icon.className = `fa-solid fa-sort-${currentSort.order === 'asc' ? 'up' : 'down'}`;
+    }
+  }
+
+  renderTransactions(transactionCache, false);
+}
+
+// ============================================
+// TRANSACTIONS
+// ============================================
+function loadTransactions() {
+  const tbody = document.getElementById('transactionsTableBody');
+  tbody.innerHTML = `
+    <tr>
+      <td colspan="5" class="loading-text">
+        <div class="loading-spinner"></div>
+        Cargando datos...
+      </td>
+    </tr>
+  `;
+
+  google.script.run
+    .withSuccessHandler(renderTransactions)
+    .withFailureHandler((error) => {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="5" style="text-align:center; padding: 30px; color: var(--accent-red);">
+            <i class="fa-solid fa-exclamation-circle" style="font-size: 24px; margin-bottom: 10px;"></i><br>
+            Error al cargar datos
+          </td>
+        </tr>
+      `;
+      showToast('Error al cargar transacciones: ' + error.message, 'error');
+    })
+    .getTransactions(currentMonth, currentYear);
+}
+
+function renderTransactions(data, updateCache = true) {
+  if (updateCache) transactionCache = data;
+  
+  if (updateCache) {
+    sortAndRender();
+    return;
+  }
+  
+  const tbody = document.getElementById('transactionsTableBody');
+  tbody.innerHTML = '';
+  
+  let totalIncome = 0;
+  let totalExpense = 0;
+
+  if (!data || data.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="5" style="text-align:center; padding: 40px; color: var(--text-secondary);">
+          <i class="fa-solid fa-inbox" style="font-size: 32px; margin-bottom: 15px; opacity: 0.5;"></i><br>
+          No hay movimientos en este mes
+        </td>
+      </tr>
+    `;
+    updateHeaderStats(0, 0);
+    return;
+  }
+
+  data.forEach(tx => {
+    const amt = Number(tx.amount);
+    if (amt > 0) totalIncome += amt;
+    else totalExpense += amt;
+    
+    const row = document.createElement('tr');
+    
+    // CORRECCIÓN: Sombreado para todos los tipos
+    if (tx.type === 'GASTO FRECUENTE') {
+      row.className = 'row-gasto-frecuente';
+    } else if (tx.type === 'INGRESO FRECUENTE') {
+      row.className = 'row-ingreso-frecuente';
+    } else if (tx.type === 'GASTO NO FRECUENTE') {
+      row.className = 'row-gasto-no-frecuente';
+    } else if (tx.type === 'INGRESO NO FRECUENTE') {
+      row.className = 'row-ingreso-no-frecuente';
+    }
+    
+    let amountClass = '';
+    if (amt >= 0) {
+      amountClass = 'amount-positive';
+    } else {
+      amountClass = tx.type === 'GASTO FRECUENTE' ? 'amount-negative' : 'amount-neutral';
+    }
+    
+    let typePillClass = 'pill-neutral';
+    if (tx.type === 'GASTO FRECUENTE') typePillClass = 'pill-red';
+    if (tx.type === 'INGRESO NO FRECUENTE') typePillClass = 'pill-green';
+    if (tx.type === 'INGRESO FRECUENTE') typePillClass = 'pill-green';
+
+    const detailText = tx.detail || '';
+    const detailHtml = `
+      <div class="detail-wrapper">
+        <div class="detail-content check-overflow" id="detail-${tx.rowId}">
+          ${escapeHtml(detailText)}
+        </div>
+        <button class="btn-expand" style="display:none;" onclick="toggleDetail('${tx.rowId}', this)">+</button>
+      </div>
+    `;
+    
+    row.innerHTML = `
+      <td style="white-space: nowrap;">${tx.date}</td>
+      <td class="${amountClass}">${amt >= 0 ? '+ S/ ' : '- S/ '} ${Math.abs(amt).toFixed(2)}</td>
+      <td>${detailHtml}</td>
+      <td><span class="${typePillClass}">${abbreviateType(tx.type)}</span></td>
+      <td>
+        <div class="action-buttons-wrapper">
+          <button class="action-btn edit" onclick="startEdit(${tx.rowId})" title="Editar">
+            <i class="fa-solid fa-pencil"></i>
+          </button>
+          <button class="action-btn delete" onclick="showDeleteModal(${tx.rowId})" title="Eliminar">
+            <i class="fa-solid fa-trash"></i>
+          </button>
+        </div>
+      </td>
+    `;
+    tbody.appendChild(row);
+  });
+  
+  updateHeaderStats(totalIncome, totalExpense);
+  setTimeout(checkDetailOverflows, 0);
+}
+
+function updateHeaderStats(income, expense) {
+  const balance = income + expense;
+  
+  document.getElementById('headerIncome').innerText = '+ S/ ' + income.toFixed(2);
+  document.getElementById('headerExpense').innerText = '- S/ ' + Math.abs(expense).toFixed(2);
+  document.getElementById('headerBalance').innerText = (balance >= 0 ? '+ S/ ' : '- S/ ') + Math.abs(balance).toFixed(2);
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// ============================================
+// DETAIL EXPANSION
+// ============================================
+window.checkDetailOverflows = function() {
+  document.querySelectorAll('.detail-wrapper').forEach(wrapper => {
+    const content = wrapper.querySelector('.detail-content');
+    const btn = wrapper.querySelector('.btn-expand');
+    if (!content || !btn) return;
+    
+    if (content.scrollWidth > content.clientWidth + 1) {
+      btn.style.display = 'flex';
+    } else {
+      if (!content.classList.contains('expanded')) {
+        btn.style.display = 'none';
+      }
+    }
+  });
+};
+
+window.toggleDetail = function(rowId, btn) {
+  const el = document.getElementById('detail-' + rowId);
+  if (el) {
+    el.classList.toggle('expanded');
+    btn.textContent = el.classList.contains('expanded') ? '−' : '+';
+  }
+};
+
+window.addEventListener('resize', () => {
+  checkDetailOverflows();
+  if (myChart) {
+    setTimeout(renderCharts, 100);
+  }
+});
+
+// ============================================
+// EDIT / DELETE
+// ============================================
+let editMode = false;
+
+window.startEdit = function(rowId) {
+  const item = transactionCache.find(t => t.rowId === rowId);
+  if (!item) return;
+  openModal(item);
+};
+
+window.showDeleteModal = function(rowId) {
+  deleteRowId = rowId;
+  deleteModal.classList.remove('hidden');
+};
+
+function confirmDelete(rowId) {
+  const btn = document.querySelector(`button[onclick="showDeleteModal(${rowId})"]`);
+  if (btn) {
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+    btn.disabled = true;
+  }
+  
+  google.script.run
+    .withSuccessHandler(() => {
+      deleteModal.classList.add('hidden');
+      deleteRowId = null;
+      loadTransactions();
+      showToast('Registro eliminado correctamente', 'success');
+    })
+    .withFailureHandler((error) => {
+      deleteModal.classList.add('hidden');
+      if (btn) {
+        btn.innerHTML = '<i class="fa-solid fa-trash"></i>';
+        btn.disabled = false;
+      }
+      showToast('Error al eliminar: ' + error.message, 'error');
+    })
+    .deleteTransaction(rowId);
+}
+
+// ============================================
+// MODAL
+// ============================================
+function openModal(data = null) {
+  addModal.classList.remove('hidden');
+  addForm.reset();
+  const previewEl = document.getElementById('mathPreviewResult');
+  previewEl.textContent = '';
+  previewEl.style.display = 'none';
+  
+  if (data) {
+    editMode = true;
+    document.getElementById('modalTitle').innerHTML = '<i class="fa-solid fa-pencil"></i> Editar Registro';
+    document.getElementById('editRowId').value = data.rowId;
+    
+    if (data.rawDate) {
+      const d = new Date(data.rawDate);
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      document.getElementById('inputDate').value = `${yyyy}-${mm}-${dd}`;
+    }
+    
+    if (data.formula && data.formula.startsWith('=')) {
+      document.getElementById('inputAmount').value = data.formula.substring(1);
+    } else {
+      document.getElementById('inputAmount').value = data.amount;
+    }
+    
+    document.getElementById('inputDetail').value = data.detail;
+    window.setDropdownValue(data.type);
+    
+    document.getElementById('btnSubmit').innerHTML = '<i class="fa-solid fa-save"></i> Guardar Cambios';
+    
+  } else {
+    editMode = false;
+    document.getElementById('modalTitle').innerHTML = '<i class="fa-solid fa-calculator"></i> Nuevo Registro';
+    document.getElementById('editRowId').value = '';
+    document.getElementById('inputDate').valueAsDate = new Date();
+    document.getElementById('btnSubmit').innerHTML = '<i class="fa-solid fa-plus"></i> Agregar';
+    
+    window.setDropdownValue('GASTO NO FRECUENTE');
+  }
+}
+
+function handleFormSubmit(e) {
+  e.preventDefault();
+  
+  const rawAmount = inputAmount.value;
+  const finalAmount = calculateExpression(rawAmount);
+  
+  if (finalAmount === null || isNaN(finalAmount)) {
+    showToast('Por favor ingrese un monto válido', 'error');
+    return;
+  }
+
+  let amountToSend = finalAmount;
+  if (rawAmount.match(/[=+\-*/]/)) {
+    if (rawAmount.trim().startsWith('=')) {
+      amountToSend = rawAmount.trim();
+    } else {
+      if (rawAmount.match(/[+\-*/]/)) {
+        amountToSend = '=' + rawAmount.trim();
+      }
+    }
+  }
+
+  const txData = {
+    date: document.getElementById('inputDate').value,
+    amount: amountToSend,
+    detail: document.getElementById('inputDetail').value,
+    type: inputType.value
+  };
+  
+  const rowId = document.getElementById('editRowId').value;
+  
+  const submitBtn = document.getElementById('btnSubmit');
+  const originalText = submitBtn.innerHTML;
+  submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Procesando...';
+  submitBtn.disabled = true;
+
+  const finish = () => {
+    submitBtn.innerHTML = originalText;
+    submitBtn.disabled = false;
+    addModal.classList.add('hidden');
+    addForm.reset();
+    loadTransactions();
+    showToast(editMode ? 'Cambios guardados correctamente' : 'Registro agregado correctamente', 'success');
+  };
+  
+  const finishAdd = (newTransaction) => {
+    submitBtn.innerHTML = originalText;
+    submitBtn.disabled = false;
+    addModal.classList.add('hidden');
+    addForm.reset();
+    
+    if (newTransaction) {
+      transactionCache.unshift(newTransaction);
+      sortAndRender();
+    }
+    showToast('Registro agregado correctamente', 'success');
+  };
+  
+  const handleError = (error) => {
+    submitBtn.innerHTML = originalText;
+    submitBtn.disabled = false;
+    showToast('Error: ' + error.message, 'error');
+  };
+  
+  if (editMode && rowId) {
+    google.script.run
+      .withSuccessHandler(finish)
+      .withFailureHandler(handleError)
+      .editTransaction(rowId, txData);
+  } else {
+    google.script.run
+      .withSuccessHandler(finishAdd)
+      .withFailureHandler(handleError)
+      .addTransactionOptimized(txData, currentMonth, currentYear);
+  }
+}
+
+// ============================================
+// SUMMARY
+// ============================================
+function loadSummary() {
+  google.script.run
+    .withSuccessHandler((data) => {
+      summaries = data;
+      renderSummaryTable(data);
+    })
+    .withFailureHandler((error) => {
+      showToast('Error al cargar resumen: ' + error.message, 'error');
+    })
+    .getMonthlySummaryData();
+}
+
+function renderSummaryTable(data) {
+  const tbody = document.getElementById('summaryTableBody');
+  tbody.innerHTML = '';
+  
+  if (!data || data.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="6" style="text-align:center; padding: 30px; color: var(--text-secondary);">
+          No hay datos de resumen
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  data.forEach(row => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="font-weight: 500;">${row.monthYear}</td>
+      <td class="amount-positive">${formatMoney(row.freqIncome)}</td>
+      <td class="amount-positive">${formatMoney(row.nonFreqIncome)}</td>
+      <td class="amount-negative">${formatMoney(row.freqExpense)}</td>
+      <td class="amount-negative">${formatMoney(row.nonFreqExpense)}</td>
+      <td class="${row.netMonthly >= 0 ? 'amount-positive' : 'amount-negative'}" style="font-weight: 700;">
+        ${formatMoney(row.netMonthly)}
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// ============================================
+// CHARTS - CORREGIDO
+// ============================================
+function renderCharts() {
+  const chartContainer = document.querySelector('.chart-container');
+  if (!chartContainer) return;
+  
+  const metricSelect = document.getElementById('chartMetricSelect');
+  const metric = metricSelect ? metricSelect.value : 'totalExpense';
+  
+  const titles = {
+    'totalExpense': 'Gastos Totales',
+    'freqExpense': 'Gasto Frecuente',
+    'nonFreqExpense': 'Gasto No Frecuente',
+    'totalIncome': 'Ingresos Totales',
+    'freqIncome': 'Ingreso Frecuente',
+    'nonFreqIncome': 'Ingreso No Frecuente',
+    'netMonthly': 'Neto Mensual'
+  };
+  
+  const metricColors = {
+    'totalExpense': '#ff5252',
+    'freqExpense': '#ff867f',
+    'nonFreqExpense': '#b61827',
+    'totalIncome': '#00e676',
+    'freqIncome': '#69f0ae',
+    'nonFreqIncome': '#00c853',
+    'netMonthly': '#448aff'
+  };
+  
+  // Process Data
+  const yearsData = {};
+  const allYears = new Set();
+  
+  summaries.forEach(s => {
+    if (!s.monthYear) return;
+    
+    const parts = s.monthYear.split(' ');
+    if(parts.length < 2) return;
+    
+    const mName = parts[0];
+    const yearStr = parts[parts.length - 1];
+    
+    const mIndex = monthNames.findIndex(m => m.toLowerCase().startsWith(mName.toLowerCase().substring(0,3)));
+    
+    if (mIndex > -1 && yearStr.match(/^\d{4}$/)) {
+      if (!yearsData[yearStr]) yearsData[yearStr] = new Array(12).fill(0);
+      
+      let val = 0;
+      switch(metric) {
+        case 'totalExpense': val = Math.abs(s.totalExpense); break;
+        case 'freqExpense': val = Math.abs(s.freqExpense); break;
+        case 'nonFreqExpense': val = Math.abs(s.nonFreqExpense); break;
+        case 'totalIncome': val = s.totalIncome; break;
+        case 'freqIncome': val = s.freqIncome; break;
+        case 'nonFreqIncome': val = s.nonFreqIncome; break;
+        case 'netMonthly': val = s.netMonthly; break;
+      }
+      
+      yearsData[yearStr][mIndex] = val;
+      allYears.add(yearStr);
+    }
+  });
+
+  const sortedYears = Array.from(allYears).sort();
+  
+  // Color palette for multiple years
+  const yearColors = ['#448aff', '#00e676', '#ff5252', '#ffd740', '#e040fb', '#ffab40'];
+  
+  const isMobile = window.innerWidth <= 768;
+  
+  const datasets = sortedYears.map((year, idx) => ({
+    label: year,
+    data: yearsData[year],
+    backgroundColor: sortedYears.length === 1 ? metricColors[metric] : yearColors[idx % yearColors.length],
+    borderRadius: 6,
+    barPercentage: 0.8,
+    categoryPercentage: 0.9,
+    barThickness: isMobile ? 15 : undefined
+  }));
+  
+  // Clear and setup container
+  if (isMobile) {
+    // Generate Legend HTML
+    const legendHtml = datasets.map(ds => `
+        <div class="legend-item">
+            <span class="legend-color" style="background-color: ${ds.backgroundColor}"></span>
+            <span>${ds.label}</span>
+        </div>
+    `).join('');
+
+    const titleText = titles[metric] || 'Gastos';
+
+    chartContainer.innerHTML = `
+        <div class="chart-header-html">
+            <div class="chart-title-html">${titleText}</div>
+            <div class="chart-legend-html">${legendHtml}</div>
+        </div>
+        <div class="chart-scroll-wrapper"><canvas id="annualChart"></canvas></div>
+    `;
+  } else {
+    chartContainer.innerHTML = '<canvas id="annualChart"></canvas>';
+  }
+  
+  const canvas = document.getElementById('annualChart');
+  if (!canvas) return;
+  
+  // Register Plugin
+  Chart.register(ChartDataLabels);
+  
+  // Destroy existing chart
+  if (myChart) {
+    myChart.destroy();
+  }
+  
+  myChart = new Chart(canvas.getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: monthNames.map(m => m.substring(0, 3)),
+      datasets: datasets
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      layout: {
+        padding: {
+          top: 20,
+          bottom: 20,
+          left: 10,
+          right: 10
+        }
+      },
+      plugins: {
+        legend: {
+          display: isMobile ? false : sortedYears.length > 1,
+          position: 'top',
+          align: 'center',
+          labels: {
+            color: '#ffffff',
+            usePointStyle: true,
+            pointStyle: 'circle',
+            font: {
+              size: isMobile ? 11 : 13,
+              family: 'Outfit'
+            },
+            padding: 20,
+            boxWidth: isMobile ? 10 : 12
+          }
+        },
+        title: {
+          display: !isMobile,
+          text: titles[metric] || 'Gastos',
+          color: '#ffffff',
+          align: 'center',
+          font: {
+            size: isMobile ? 16 : 18,
+            weight: 'bold',
+            family: 'Outfit'
+          },
+          padding: {
+            bottom: 20,
+            top: 0
+          }
+        },
+        tooltip: {
+          enabled: true,
+          backgroundColor: 'rgba(22, 25, 38, 0.95)',
+          titleColor: '#ffffff',
+          bodyColor: '#ffffff',
+          borderColor: '#2a2f45',
+          borderWidth: 1,
+          padding: 12,
+          cornerRadius: 10,
+          displayColors: true,
+          callbacks: {
+            label: function(context) {
+              let label = context.dataset.label ? context.dataset.label + ': ' : '';
+              if (context.parsed.y !== null) {
+                label += 'S/ ' + context.parsed.y.toFixed(2);
+              }
+              return label;
+            }
+          }
+        },
+        datalabels: {
+          display: function(context) {
+            return context.dataset.data[context.dataIndex] !== 0;
+          },
+          anchor: 'end',
+          align: 'top',
+          offset: 4,
+          color: '#ffffff',
+          font: {
+            size: isMobile ? 9 : 10,
+            weight: '600',
+            family: 'Outfit'
+          },
+          formatter: function(value) {
+            if (value === 0) return '';
+            return 'S/' + value.toFixed(0);
+          },
+          rotation: -85
+        }
+      },
+      scales: {
+        y: {
+          ticks: {
+            color: '#8b92a8',
+            font: {
+              size: isMobile ? 10 : 11,
+              family: 'Outfit'
+            },
+            callback: function(value) {
+              if (value >= 1000) {
+                return 'S/' + (value / 1000).toFixed(1) + 'k';
+              }
+              return 'S/' + value;
+            }
+          },
+          grid: {
+            color: '#2a2f45',
+            drawBorder: false
+          },
+          beginAtZero: true,
+          border: {
+            display: false
+          }
+        },
+        x: {
+          ticks: {
+            color: '#8b92a8',
+            font: {
+              size: isMobile ? 10 : 12,
+              family: 'Outfit'
+            }
+          },
+          grid: {
+            display: false
+          },
+          border: {
+            display: false
+          }
+        }
+      },
+      interaction: {
+        mode: 'index',
+        intersect: false
+      },
+      animation: {
+        duration: 800,
+        easing: 'easeOutQuart'
+      }
+    }
+  });
+}
+</script>
