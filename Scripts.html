@@ -203,6 +203,13 @@ function setupEventListeners() {
       
       if (tabName === 'charts') {
         setTimeout(renderCharts, 100);
+        // Ocultar controles de fecha en móvil para vista de gráficos
+        const mobileControls = document.querySelector('.mobile-controls');
+        if (mobileControls) mobileControls.style.display = 'none';
+      } else {
+        // Mostrar en otras vistas
+        const mobileControls = document.querySelector('.mobile-controls');
+        if (mobileControls) mobileControls.style.display = 'flex';
       }
     });
   });
@@ -629,8 +636,6 @@ function renderTransactions(data, updateCache = true) {
       row.className = 'row-gasto-frecuente';
     } else if (tx.type === 'INGRESO FRECUENTE') {
       row.className = 'row-ingreso-frecuente';
-    } else if (tx.type === 'GASTO NO FRECUENTE') {
-      row.className = 'row-gasto-no-frecuente';
     } else if (tx.type === 'INGRESO NO FRECUENTE') {
       row.className = 'row-ingreso-no-frecuente';
     }
@@ -754,8 +759,15 @@ function confirmDelete(rowId) {
   google.script.run
     .withSuccessHandler(() => {
       deleteModal.classList.add('hidden');
+      
+      // ACTUALIZACIÓN LOCAL: Eliminar del cache y re-renderizar
+      if (deleteRowId) {
+        transactionCache = transactionCache.filter(t => t.rowId !== deleteRowId);
+        sortAndRender();
+        loadSummary(); // Actualizar el resumen también por si acaso
+      }
+      
       deleteRowId = null;
-      loadTransactions();
       showToast('Registro eliminado correctamente', 'success');
     })
     .withFailureHandler((error) => {
@@ -850,13 +862,22 @@ function handleFormSubmit(e) {
   submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Procesando...';
   submitBtn.disabled = true;
 
-  const finish = () => {
+  const finishEdit = (updatedTransaction) => {
     submitBtn.innerHTML = originalText;
     submitBtn.disabled = false;
     addModal.classList.add('hidden');
     addForm.reset();
-    loadTransactions();
-    showToast(editMode ? 'Cambios guardados correctamente' : 'Registro agregado correctamente', 'success');
+    
+    // ACTUALIZACIÓN LOCAL: Buscar y reemplazar en el cache
+    if (updatedTransaction) {
+      const index = transactionCache.findIndex(t => t.rowId === updatedTransaction.rowId);
+      if (index > -1) {
+        transactionCache[index] = updatedTransaction;
+        sortAndRender();
+        loadSummary();
+      }
+    }
+    showToast('Cambios guardados correctamente', 'success');
   };
   
   const finishAdd = (newTransaction) => {
@@ -880,7 +901,7 @@ function handleFormSubmit(e) {
   
   if (editMode && rowId) {
     google.script.run
-      .withSuccessHandler(finish)
+      .withSuccessHandler(finishEdit)
       .withFailureHandler(handleError)
       .editTransaction(rowId, txData);
   } else {

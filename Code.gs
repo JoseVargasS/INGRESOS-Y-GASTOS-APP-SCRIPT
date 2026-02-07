@@ -1,6 +1,6 @@
 /**
  * ============================================
- * BUCKS MANAGER - CODE.GS MEJORADO
+ * BUCKS MANAGER
  * Control de Gastos - Google Apps Script
  * ============================================
  */
@@ -205,11 +205,6 @@ function deleteTransaction(rowId) {
   }
 }
 
-/**
- * Edita una transacción existente
- * @param {number} rowId - ID de la fila a editar
- * @param {Object} transactionData - Nuevos datos
- */
 function editTransaction(rowId, transactionData) {
   var sheet = getSheetByName('INGRESOS Y GASTOS');
   if (!sheet) throw new Error("No se encontró la hoja 'INGRESOS Y GASTOS'");
@@ -218,13 +213,27 @@ function editTransaction(rowId, transactionData) {
   var dateObj = new Date(parts[0], parts[1] - 1, parts[2]);
   
   try {
+    rowId = parseInt(rowId);
     sheet.getRange(rowId, 1, 1, 4).setValues([[
       dateObj,
       transactionData.amount,
       transactionData.detail,
       transactionData.type
     ]]);
-    return { success: true, message: 'Transacción actualizada correctamente' };
+    
+    // Obtener valores actualizados para el retorno optimizado
+    var formula = sheet.getRange(rowId, 2).getFormula();
+    var actualAmount = sheet.getRange(rowId, 2).getValue();
+    
+    return {
+      rowId: rowId,
+      date: formatDateForSheet(dateObj),
+      rawDate: dateObj.toISOString(),
+      amount: actualAmount,
+      formula: formula,
+      detail: transactionData.detail,
+      type: transactionData.type
+    };
   } catch (e) {
     throw new Error('Error al editar: ' + e.toString());
   }
