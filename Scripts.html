@@ -1143,17 +1143,18 @@ function renderSummaryTable(data) {
         labels: ['Ing. Frecuente', 'Ing. No Frec.'],
         datasets: [{
           data: [totFreqInc, totNoFreqInc],
-          backgroundColor: ['#00e676', '#00c853'],
-          borderWidth: 0,
-          hoverOffset: 8
+          backgroundColor: ['#00e676', '#00b0ff'],   // Green vs Cyan Blue — high contrast
+          borderColor: ['#003d1f', '#003366'],
+          borderWidth: 2,
+          hoverOffset: 10
         }]
       },
       options: {
-        responsive: true, maintainAspectRatio: false, cutout: '68%',
+        responsive: true, maintainAspectRatio: false, cutout: '70%',
         plugins: {
-          legend: { position: 'bottom', labels: { color: '#8b92a8', font: { size: 11, family: 'Outfit' }, boxWidth: 12, padding: 12 } },
-          tooltip: { backgroundColor: 'rgba(22,25,38,0.95)', padding: 10, cornerRadius: 8,
-            callbacks: { label: ctx => ' S/ ' + ctx.parsed.toFixed(2) }
+          legend: { position: 'bottom', labels: { color: '#b0b8cc', font: { size: 11, family: 'Outfit' }, boxWidth: 12, padding: 14 } },
+          tooltip: { backgroundColor: 'rgba(14,18,30,0.97)', padding: 12, cornerRadius: 10, bodyColor: '#fff',
+            callbacks: { label: ctx => ` S/ ${ctx.parsed.toFixed(2)}` }
           },
           datalabels: { display: false }
         }
@@ -1171,17 +1172,18 @@ function renderSummaryTable(data) {
         labels: ['Gasto Frec.', 'Gasto No Frec.'],
         datasets: [{
           data: [totFreqExp, totNoFreqExp],
-          backgroundColor: ['#ff5252', '#b71c1c'],
-          borderWidth: 0,
-          hoverOffset: 8
+          backgroundColor: ['#ff3d00', '#ffd740'],   // Vivid Red vs Amber — high contrast
+          borderColor: ['#3d0000', '#3d3000'],
+          borderWidth: 2,
+          hoverOffset: 10
         }]
       },
       options: {
-        responsive: true, maintainAspectRatio: false, cutout: '68%',
+        responsive: true, maintainAspectRatio: false, cutout: '70%',
         plugins: {
-          legend: { position: 'bottom', labels: { color: '#8b92a8', font: { size: 11, family: 'Outfit' }, boxWidth: 12, padding: 12 } },
-          tooltip: { backgroundColor: 'rgba(22,25,38,0.95)', padding: 10, cornerRadius: 8,
-            callbacks: { label: ctx => ' S/ ' + ctx.parsed.toFixed(2) }
+          legend: { position: 'bottom', labels: { color: '#b0b8cc', font: { size: 11, family: 'Outfit' }, boxWidth: 12, padding: 14 } },
+          tooltip: { backgroundColor: 'rgba(14,18,30,0.97)', padding: 12, cornerRadius: 10, bodyColor: '#fff',
+            callbacks: { label: ctx => ` S/ ${ctx.parsed.toFixed(2)}` }
           },
           datalabels: { display: false }
         }
@@ -1206,29 +1208,41 @@ function renderSummaryTable(data) {
       }
     });
 
+    const netData = incData.map((v, i) => v - expData[i]);
+
     Chart.register(ChartDataLabels);
     dashTrend = new Chart(trendCtx.getContext('2d'), {
       type: 'bar',
       data: {
         labels: mLabels,
         datasets: [
-          { label: 'Ingresos', data: incData, backgroundColor: 'rgba(0,230,118,0.75)', borderRadius: 6, barPercentage: 0.7 },
-          { label: 'Gastos',   data: expData, backgroundColor: 'rgba(255,82,82,0.75)',  borderRadius: 6, barPercentage: 0.7 }
+          { label: 'Ingresos', data: incData, backgroundColor: 'rgba(0,230,118,0.8)', borderRadius: 8, barPercentage: 0.6, order: 2 },
+          { label: 'Gastos',   data: expData, backgroundColor: 'rgba(255,82,82,0.8)',  borderRadius: 8, barPercentage: 0.6, order: 2 },
+          {
+            label: 'Neto', data: netData, type: 'line',
+            borderColor: '#ffd740', backgroundColor: 'rgba(255, 215, 64, 0.1)',
+            borderWidth: 2.5, pointRadius: 4, pointBackgroundColor: '#ffd740',
+            pointBorderColor: '#14172b', pointBorderWidth: 2,
+            tension: 0.4, fill: true, order: 1
+          }
         ]
       },
       options: {
         responsive: true, maintainAspectRatio: false,
         plugins: {
-          legend: { position: 'top', labels: { color: '#8b92a8', font: { size: 11, family: 'Outfit' }, boxWidth: 12, padding: 14 } },
+          legend: { position: 'top', labels: { color: '#b0b8cc', font: { size: 11, family: 'Outfit' }, boxWidth: 12, padding: 14, usePointStyle: true, pointStyle: 'circle' } },
           tooltip: {
-            backgroundColor: 'rgba(22,25,38,0.95)', titleColor: '#fff', bodyColor: '#ccc',
-            borderColor: '#2a2f45', borderWidth: 1, padding: 10, cornerRadius: 8,
-            callbacks: { label: ctx => ' S/ ' + ctx.parsed.y.toFixed(2) }
+            backgroundColor: 'rgba(14,18,30,0.97)', titleColor: '#fff', bodyColor: '#ccc',
+            borderColor: '#2a2f45', borderWidth: 1, padding: 12, cornerRadius: 10,
+            callbacks: {
+              label: ctx => ` ${ctx.dataset.label}: S/ ${ctx.parsed.y.toFixed(2)}`,
+              labelColor: ctx => ({ borderColor: ctx.dataset.borderColor || ctx.dataset.backgroundColor, backgroundColor: ctx.dataset.borderColor || ctx.dataset.backgroundColor })
+            }
           },
           datalabels: { display: false }
         },
         scales: {
-          y: { beginAtZero: true, grid: { color: '#2a2f45', drawBorder: false }, ticks: { color: '#8b92a8', font: { family: 'Outfit', size: 10 }, callback: v => 'S/' + (v >= 1000 ? (v/1000).toFixed(1)+'k' : v) }, border: { display: false } },
+          y: { beginAtZero: true, grid: { color: 'rgba(42,47,69,0.6)', drawBorder: false }, ticks: { color: '#8b92a8', font: { family: 'Outfit', size: 10 }, callback: v => 'S/' + (v >= 1000 ? (v/1000).toFixed(1)+'k' : v) }, border: { display: false } },
           x: { grid: { display: false }, ticks: { color: '#8b92a8', font: { family: 'Outfit', size: 10 } }, border: { display: false } }
         },
         interaction: { mode: 'index', intersect: false },
@@ -1328,252 +1342,161 @@ function handleFreqIncomeSubmit(e) {
 function renderCharts() {
   const chartContainer = document.querySelector('.chart-container');
   if (!chartContainer) return;
-  
+  if (!summaries || summaries.length === 0) return;
+
   const metricSelect = document.getElementById('chartMetricSelect');
-  const metric = metricSelect ? metricSelect.value : 'totalExpense';
-  
-  const titles = {
-    'totalExpense': 'Gastos Totales',
-    'freqExpense': 'Gasto Frecuente',
-    'nonFreqExpense': 'Gasto No Frecuente',
-    'totalIncome': 'Ingresos Totales',
-    'freqIncome': 'Ingreso Frecuente',
-    'nonFreqIncome': 'Ingreso No Frecuente',
-    'netMonthly': 'Neto Mensual'
-  };
-  
-  const metricColors = {
-    'totalExpense': '#ff5252',
-    'freqExpense': '#ff867f',
-    'nonFreqExpense': '#b61827',
-    'totalIncome': '#00e676',
-    'freqIncome': '#69f0ae',
-    'nonFreqIncome': '#00c853',
-    'netMonthly': '#448aff'
-  };
-  
-  // Process Data
-  const yearsData = {};
+  const metric = metricSelect ? metricSelect.value : 'comparison';
+  const isMobile = window.innerWidth <= 768;
+
+  // Build year-keyed data
+  const yearsData = {}, incomeData = {}, expenseData = {};
   const allYears = new Set();
-  
+
   summaries.forEach(s => {
     if (!s.monthYear) return;
-    
     const parts = s.monthYear.split(' ');
-    if(parts.length < 2) return;
-    
-    const mName = parts[0];
-    const yearStr = parts[parts.length - 1];
-    
-    const mIndex = monthNames.findIndex(m => m.toLowerCase().startsWith(mName.toLowerCase().substring(0,3)));
-    
-    if (mIndex > -1 && yearStr.match(/^\d{4}$/)) {
-      if (!yearsData[yearStr]) yearsData[yearStr] = new Array(12).fill(0);
-      
-      let val = 0;
-      switch(metric) {
-        case 'totalExpense': val = Math.abs(s.totalExpense); break;
-        case 'freqExpense': val = Math.abs(s.freqExpense); break;
-        case 'nonFreqExpense': val = Math.abs(s.nonFreqExpense); break;
-        case 'totalIncome': val = s.totalIncome; break;
-        case 'freqIncome': val = s.freqIncome; break;
-        case 'nonFreqIncome': val = s.nonFreqIncome; break;
-        case 'netMonthly': val = s.netMonthly; break;
-      }
-      
-      yearsData[yearStr][mIndex] = val;
-      allYears.add(yearStr);
-    }
+    if (parts.length < 2) return;
+    const mName = parts[0], yearStr = parts[parts.length - 1];
+    if (!yearStr.match(/^\d{4}$/)) return;
+    const mIdx = monthNames.findIndex(m => m.toLowerCase().startsWith(mName.toLowerCase().substring(0, 3)));
+    if (mIdx < 0) return;
+    allYears.add(yearStr);
+    if (!yearsData[yearStr])   yearsData[yearStr]   = new Array(12).fill(0);
+    if (!incomeData[yearStr])  incomeData[yearStr]  = new Array(12).fill(0);
+    if (!expenseData[yearStr]) expenseData[yearStr] = new Array(12).fill(0);
+    incomeData[yearStr][mIdx]  = (Number(s.freqIncome) || 0) + (Number(s.nonFreqIncome) || 0);
+    expenseData[yearStr][mIdx] = Math.abs(Number(s.totalExpense) || 0);
+    const mm = { totalExpense: Math.abs(Number(s.totalExpense)), freqExpense: Math.abs(Number(s.freqExpense)), nonFreqExpense: Math.abs(Number(s.nonFreqExpense)),
+                 totalIncome: incomeData[yearStr][mIdx], freqIncome: Number(s.freqIncome)||0, nonFreqIncome: Number(s.nonFreqIncome)||0, netMonthly: Number(s.netMonthly)||0 };
+    yearsData[yearStr][mIdx] = mm[metric] ?? 0;
   });
 
   const sortedYears = Array.from(allYears).sort();
+  const mLabels = monthNames.map(m => m.substring(0, 3));
   
-  // Color palette for multiple years
-  const yearColors = ['#448aff', '#00e676', '#ff5252', '#ffd740', '#e040fb', '#ffab40'];
-  
-  const isMobile = window.innerWidth <= 768;
-  
-  const datasets = sortedYears.map((year, idx) => ({
-    label: year,
-    data: yearsData[year],
-    backgroundColor: sortedYears.length === 1 ? metricColors[metric] : yearColors[idx % yearColors.length],
-    borderRadius: 6,
-    barPercentage: 0.8,
-    categoryPercentage: 0.9,
-    barThickness: isMobile ? 15 : undefined
-  }));
-  
-  // Clear and setup container
-  if (isMobile) {
-    // Generate Legend HTML
-    const legendHtml = datasets.map(ds => `
-        <div class="legend-item">
-            <span class="legend-color" style="background-color: ${ds.backgroundColor}"></span>
-            <span>${ds.label}</span>
-        </div>
-    `).join('');
+  // Premium Colors & Utilities
+  const ctx = document.createElement('canvas').getContext('2d');
+  const getGradient = (color1, color2) => {
+    const grd = ctx.createLinearGradient(0, 0, 0, 400);
+    grd.addColorStop(0, color1);
+    grd.addColorStop(1, color2);
+    return grd;
+  };
 
-    const titleText = titles[metric] || 'Gastos';
+  const palette = [
+    { main: '#448aff', light: '#82b1ff' }, // Blue
+    { main: '#00e676', light: '#69f0ae' }, // Green
+    { main: '#ff5252', light: '#ff8a80' }, // Red
+    { main: '#ffd740', light: '#ffe57f' }, // Yellow
+    { main: '#e040fb', light: '#ea80fc' }, // Purple
+    { main: '#ffab40', light: '#ffd180' }  // Orange
+  ];
 
-    chartContainer.innerHTML = `
-        <div class="chart-header-html">
-            <div class="chart-title-html">${titleText}</div>
-            <div class="chart-legend-html">${legendHtml}</div>
-        </div>
-        <div class="chart-scroll-wrapper"><canvas id="annualChart"></canvas></div>
-    `;
+  let datasets = [];
+  if (metric === 'comparison') {
+    sortedYears.forEach((yr, i) => {
+      const p = palette[i % palette.length];
+      datasets.push({ 
+        label: `Ingresos ${yr}`, 
+        data: incomeData[yr], 
+        backgroundColor: getGradient('rgba(0, 230, 118, 0.8)', 'rgba(0, 230, 118, 0.3)'),
+        borderColor: '#00e676', borderWidth: 1, borderRadius: 5, barPercentage: 0.8, categoryPercentage: 0.7, order: 2 
+      });
+      datasets.push({ 
+        label: `Gastos ${yr}`, 
+        data: expenseData[yr].map(v => -v), 
+        backgroundColor: getGradient('rgba(255, 82, 82, 0.8)', 'rgba(255, 82, 82, 0.3)'),
+        borderColor: '#ff5252', borderWidth: 1, borderRadius: 5, barPercentage: 0.8, categoryPercentage: 0.7, order: 2 
+      });
+    });
+    const lineColors = ['#ffd740','#e040fb','#00b0ff','#ffab40'];
+    sortedYears.forEach((yr, i) => {
+      const lc = lineColors[i % lineColors.length];
+      const netVals = incomeData[yr].map((v,j) => v - expenseData[yr][j]);
+      datasets.push({ 
+        label:`Neto ${yr}`, data: netVals, type:'line', borderColor:lc, backgroundColor:lc+'22', 
+        borderWidth:3, pointRadius:4, pointHoverRadius:6, pointBackgroundColor:lc, pointBorderColor:'#14172b', 
+        pointBorderWidth:2, tension:0.4, fill:true, order:1 
+      });
+    });
   } else {
-    chartContainer.innerHTML = '<canvas id="annualChart"></canvas>';
+    const metricColors = { 
+       totalExpense: palette[2], freqExpense: palette[2], nonFreqExpense: palette[3],
+       totalIncome: palette[1], freqIncome: palette[0], nonFreqIncome: palette[4], netMonthly: palette[5] 
+    };
+    const c = metricColors[metric] || palette[0];
+    sortedYears.forEach((yr, i) => {
+      const p = sortedYears.length === 1 ? c : palette[i % palette.length];
+      datasets.push({
+        label: yr,
+        data: yearsData[yr],
+        backgroundColor: getGradient(p.main + 'dd', p.main + '44'),
+        borderColor: p.main,
+        borderWidth: 1.5,
+        borderRadius: 8,
+        barPercentage: sortedYears.length > 3 ? 0.9 : 0.7,
+        categoryPercentage: 0.8,
+        barThickness: isMobile ? 12 : undefined
+      });
+    });
   }
-  
+
+  chartContainer.innerHTML = `<div class="chart-scroll-wrapper" style="overflow-x: auto; height: 100%; padding-bottom: 5px;"><canvas id="annualChart"></canvas></div>`;
   const canvas = document.getElementById('annualChart');
-  if (!canvas) return;
-  
-  // Register Plugin
-  Chart.register(ChartDataLabels);
-  
-  // Destroy existing chart
-  if (myChart) {
-    myChart.destroy();
+  if (isMobile) {
+    const minW = Math.max(640, datasets.length * (sortedYears.length > 1 ? 80 : 50));
+    canvas.style.minWidth = minW + 'px';
   }
-  
+
+  if (myChart) myChart.destroy();
+  Chart.register(ChartDataLabels);
+
+  const titles = { comparison:'Ingresos vs Gastos', totalExpense:'Gastos Totales', freqExpense:'Gasto Frecuente', nonFreqExpense:'Gasto No Frecuente', totalIncome:'Ingresos Totales', freqIncome:'Ingreso Frecuente', nonFreqIncome:'Ingreso No Frecuente', netMonthly:'Neto Mensual' };
+
   myChart = new Chart(canvas.getContext('2d'), {
     type: 'bar',
-    data: {
-      labels: monthNames.map(m => m.substring(0, 3)),
-      datasets: datasets
-    },
+    data: { labels: mLabels, datasets },
     options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      layout: {
-        padding: {
-          top: 20,
-          bottom: 20,
-          left: 10,
-          right: 10
-        }
-      },
+      responsive: true, maintainAspectRatio: false,
       plugins: {
         legend: {
-          display: isMobile ? false : sortedYears.length > 1,
-          position: 'top',
-          align: 'center',
-          labels: {
-            color: '#ffffff',
-            usePointStyle: true,
-            pointStyle: 'circle',
-            font: {
-              size: isMobile ? 11 : 13,
-              family: 'Outfit'
-            },
-            padding: 20,
-            boxWidth: isMobile ? 10 : 12
-          }
+          display: true, position: 'top', align: 'center',
+          labels: { color:'#b0b8cc', usePointStyle:true, pointStyle:'circle', font:{ size:isMobile?10:12, family:'Outfit' }, padding:15, boxWidth:8 }
         },
         title: {
-          display: !isMobile,
-          text: titles[metric] || 'Gastos',
-          color: '#ffffff',
-          align: 'center',
-          font: {
-            size: isMobile ? 16 : 18,
-            weight: 'bold',
-            family: 'Outfit'
-          },
-          padding: {
-            bottom: 20,
-            top: 0
-          }
+          display: true, text: titles[metric] || 'Gráfico', color:'#e0e4f0',
+          font:{ size:isMobile?15:18, weight:'700', family:'Outfit' }, padding:{ bottom:20 }
         },
         tooltip: {
-          enabled: true,
-          backgroundColor: 'rgba(22, 25, 38, 0.95)',
-          titleColor: '#ffffff',
-          bodyColor: '#ffffff',
-          borderColor: '#2a2f45',
-          borderWidth: 1,
-          padding: 12,
-          cornerRadius: 10,
-          displayColors: true,
-          callbacks: {
-            label: function(context) {
-              let label = context.dataset.label ? context.dataset.label + ': ' : '';
-              if (context.parsed.y !== null) {
-                label += 'S/ ' + context.parsed.y.toFixed(2);
-              }
-              return label;
-            }
-          }
+          backgroundColor: 'rgba(10,14,28,0.95)', titleColor: '#fff', bodyColor: '#c0c8d8',
+          borderColor: '#2a3060', borderWidth: 1, padding: 12, cornerRadius: 10,
+          callbacks: { label: ctx => ` ${ctx.dataset.label}: S/ ${Math.abs(ctx.parsed.y).toFixed(2)}` }
         },
         datalabels: {
-          display: function(context) {
-            return context.dataset.data[context.dataIndex] !== 0;
+          display: (ctx) => {
+            return Math.abs(ctx.dataset.data[ctx.dataIndex]) > 0;
           },
           anchor: 'end',
           align: 'top',
           offset: 4,
-          color: '#ffffff',
-          font: {
-            size: isMobile ? 9 : 10,
-            weight: '600',
-            family: 'Outfit'
-          },
-          formatter: function(value) {
-            if (value === 0) return '';
-            return 'S/' + value.toFixed(0);
-          },
-          rotation: -85
+          color: '#ddeeff',
+          font: { size: isMobile ? 9 : 10, weight: '600', family: 'Outfit' },
+          formatter: v => 'S/' + Math.abs(v).toFixed(0),
+          rotation: isMobile ? -90 : -45
         }
       },
       scales: {
         y: {
-          ticks: {
-            color: '#8b92a8',
-            font: {
-              size: isMobile ? 10 : 11,
-              family: 'Outfit'
-            },
-            callback: function(value) {
-              if (value >= 1000) {
-                return 'S/' + (value / 1000).toFixed(1) + 'k';
-              }
-              return 'S/' + value;
-            }
-          },
-          grid: {
-            color: '#2a2f45',
-            drawBorder: false
-          },
-          beginAtZero: true,
-          border: {
-            display: false
+          beginAtZero: true, grid: { color:'rgba(42,47,80,0.4)', drawBorder:false },
+          ticks: { 
+            color:'#8b92a8', font:{ size:isMobile?9:11, family:'Outfit' }, 
+            callback: v => 'S/'+(Math.abs(v)>=1000?(Math.abs(v)/1000).toFixed(1)+'k':Math.abs(v)) 
           }
         },
-        x: {
-          ticks: {
-            color: '#8b92a8',
-            font: {
-              size: isMobile ? 10 : 12,
-              family: 'Outfit'
-            }
-          },
-          grid: {
-            display: false
-          },
-          border: {
-            display: false
-          }
-        }
+        x: { grid:{ display:false }, ticks:{ color:'#8b92a8', font:{ size:isMobile?10:11, family:'Outfit' } } }
       },
-      interaction: {
-        mode: 'index',
-        intersect: false
-      },
-      animation: {
-        duration: 800,
-        easing: 'easeOutQuart'
-      }
+      interaction: { mode:'index', intersect:false },
+      animation: { duration:1000, easing:'easeOutQuart' }
     }
   });
 }

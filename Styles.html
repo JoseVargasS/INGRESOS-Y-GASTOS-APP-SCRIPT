@@ -1306,8 +1306,12 @@ tr.row-ingreso-no-frecuente:hover td {
   .dash-chart-wide { grid-column: 1 / -1; }
 }
 
-@media (max-width: 600px) {
-  .dashboard-charts-row { grid-template-columns: 1fr; }
+@media (max-width: 768px) {
+  .dashboard-charts-row {
+    grid-template-columns: 1fr;
+    gap: 14px;
+    margin-bottom: 20px;
+  }
   .dash-chart-wide { grid-column: auto; }
 }
 
@@ -1317,6 +1321,8 @@ tr.row-ingreso-no-frecuente:hover td {
   border-radius: 20px;
   padding: 20px;
   transition: border-color var(--transition-fast);
+  overflow: hidden; /* Prevent canvas overflow */
+  min-width: 0;     /* Required for grid children in flex/grid */
 }
 
 .dash-chart-card:hover { border-color: var(--border-color-light); }
@@ -1338,14 +1344,32 @@ tr.row-ingreso-no-frecuente:hover td {
 .dash-pie-wrapper {
   position: relative;
   height: 200px;
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
 }
 
 .dash-bar-wrapper {
   position: relative;
   height: 200px;
+  width: 100%;
+  overflow: hidden;
+}
+
+@media (max-width: 768px) {
+  .dash-pie-wrapper {
+    height: 180px;
+  }
+  
+  .dash-bar-wrapper {
+    height: 190px;
+  }
+  
+  .dash-chart-card {
+    padding: 16px;
+  }
 }
 
 /* Summary table section */
@@ -1439,23 +1463,49 @@ tr.row-ingreso-no-frecuente:hover td {
 
 .chart-container {
   position: relative;
-  height: 500px;
+  height: 520px;
   width: 100%;
-  background: var(--bg-card);
+  background: linear-gradient(180deg, var(--bg-card) 0%, rgba(20, 23, 43, 0.8) 100%);
   border-radius: 20px;
   border: 1.5px solid var(--border-color);
-  padding: 20px;
-  transition: border-color var(--transition-fast);
+  padding: 24px;
+  transition: all var(--transition-normal);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
 }
 
 .chart-container:hover {
   border-color: var(--border-color-light);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+
+.chart-scroll-wrapper {
+  height: 100%;
+  width: 100%;
+}
+
+.chart-scroll-wrapper::-webkit-scrollbar {
+  height: 6px;
+}
+
+.chart-scroll-wrapper::-webkit-scrollbar-track {
+  background: rgba(42, 47, 80, 0.2);
+  border-radius: 10px;
+}
+
+.chart-scroll-wrapper::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 10px;
+}
+
+.chart-scroll-wrapper::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-blue);
 }
 
 @media (max-width: 768px) {
   .chart-container {
-    height: 450px;
-    padding: 15px;
+    height: 480px;
+    padding: 16px;
   }
   
   .chart-metric-select {
