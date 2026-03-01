@@ -1159,6 +1159,12 @@ tr.row-ingreso-no-frecuente:hover td {
   white-space: nowrap;
 }
 
+/* Friendly red for summary table to avoid "too much red" feel */
+.summary-table .amount-negative {
+  color: #ff8a80; 
+  font-weight: 500;
+}
+
 .amount-neutral {
   color: var(--text-primary);
   font-weight: 500;
@@ -1405,6 +1411,12 @@ tr.row-ingreso-no-frecuente:hover td {
 .summary-table td:first-child {
   text-align: left;
   white-space: nowrap;
+}
+
+/* Align DETALLE column to left in main table */
+.table-container table th:nth-child(3),
+.table-container table td:nth-child(3) {
+  text-align: left;
 }
 
 @media (max-width: 768px) {

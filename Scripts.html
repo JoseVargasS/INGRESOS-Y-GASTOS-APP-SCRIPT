@@ -1458,6 +1458,7 @@ function renderCharts() {
     data: { labels: mLabels, datasets },
     options: {
       responsive: true, maintainAspectRatio: false,
+      layout: { padding: { top: isMobile ? 40 : 20, bottom: 10, left: 10, right: 10 } },
       plugins: {
         legend: {
           display: true, position: 'top', align: 'center',
