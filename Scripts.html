@@ -1066,39 +1066,200 @@ function loadSummary() {
     .getMonthlySummaryData();
 }
 
+// Dashboard chart instances
+var dashPieIncome  = null;
+var dashPieExpense = null;
+var dashTrend      = null;
+var summarySelectedYear = null;
+
 function renderSummaryTable(data) {
-  const tbody = document.getElementById('summaryTableBody');
-  tbody.innerHTML = '';
-  
   if (!data || data.length === 0) {
-    tbody.innerHTML = `
-      <tr>
-        <td colspan="6" style="text-align:center; padding: 30px; color: var(--text-secondary);">
-          No hay datos de resumen
-        </td>
-      </tr>
-    `;
+    document.getElementById('summaryTableBody').innerHTML =
+      '<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--text-secondary);">No hay datos</td></tr>';
     return;
   }
 
-  data.forEach(row => {
+  // ── Extract available years ──────────────────────────────────────────────
+  const yearsSet = new Set();
+  data.forEach(s => {
+    if (!s.monthYear) return;
+    const parts = s.monthYear.split(' ');
+    if (parts.length >= 2) yearsSet.add(parts[parts.length - 1]);
+  });
+  const years = Array.from(yearsSet).sort().reverse();
+
+  // Default to most-recent year on first render
+  if (!summarySelectedYear || !years.includes(summarySelectedYear)) {
+    summarySelectedYear = years[0];
+  }
+
+  // ── Year Chips ───────────────────────────────────────────────────────────
+  const chipsEl = document.getElementById('summaryYearChips');
+  chipsEl.innerHTML = '';
+  years.forEach(yr => {
+    const btn = document.createElement('button');
+    btn.className = 'year-chip-btn' + (yr === summarySelectedYear ? ' active' : '');
+    btn.textContent = yr;
+    btn.addEventListener('click', () => {
+      summarySelectedYear = yr;
+      renderSummaryTable(summaries);
+    });
+    chipsEl.appendChild(btn);
+  });
+
+  // ── Filter data for selected year ────────────────────────────────────────
+  const yearData = data.filter(s => s.monthYear && s.monthYear.endsWith(summarySelectedYear));
+
+  // ── KPI Aggregates ───────────────────────────────────────────────────────
+  let totFreqInc = 0, totNoFreqInc = 0, totFreqExp = 0, totNoFreqExp = 0;
+  yearData.forEach(s => {
+    totFreqInc   += Number(s.freqIncome)    || 0;
+    totNoFreqInc += Number(s.nonFreqIncome) || 0;
+    totFreqExp   += Math.abs(Number(s.freqExpense))    || 0;
+    totNoFreqExp += Math.abs(Number(s.nonFreqExpense)) || 0;
+  });
+  const totIncome  = totFreqInc + totNoFreqInc;
+  const totExpense = totFreqExp + totNoFreqExp;
+  const netBalance = totIncome - totExpense;
+  const savingsRate = totIncome > 0 ? Math.round((netBalance / totIncome) * 100) : 0;
+
+  // Update KPI cards
+  document.getElementById('kpiTotalIncome').textContent  = 'S/ ' + totIncome.toFixed(2);
+  document.getElementById('kpiTotalExpense').textContent = 'S/ ' + totExpense.toFixed(2);
+  const netEl = document.getElementById('kpiNetBalance');
+  netEl.textContent = (netBalance >= 0 ? '+ ' : '- ') + 'S/ ' + Math.abs(netBalance).toFixed(2);
+  netEl.style.color = netBalance >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+  const srEl = document.getElementById('kpiSavingsRate');
+  srEl.textContent = savingsRate + '%';
+  srEl.style.color = savingsRate >= 0 ? 'var(--accent-yellow)' : 'var(--accent-red)';
+
+  // ── Pie: Income Breakdown ────────────────────────────────────────────────
+  const pieIncCtx = document.getElementById('pieIncomeChart');
+  if (pieIncCtx) {
+    if (dashPieIncome) dashPieIncome.destroy();
+    dashPieIncome = new Chart(pieIncCtx.getContext('2d'), {
+      type: 'doughnut',
+      data: {
+        labels: ['Ing. Frecuente', 'Ing. No Frec.'],
+        datasets: [{
+          data: [totFreqInc, totNoFreqInc],
+          backgroundColor: ['#00e676', '#00c853'],
+          borderWidth: 0,
+          hoverOffset: 8
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, cutout: '68%',
+        plugins: {
+          legend: { position: 'bottom', labels: { color: '#8b92a8', font: { size: 11, family: 'Outfit' }, boxWidth: 12, padding: 12 } },
+          tooltip: { backgroundColor: 'rgba(22,25,38,0.95)', padding: 10, cornerRadius: 8,
+            callbacks: { label: ctx => ' S/ ' + ctx.parsed.toFixed(2) }
+          },
+          datalabels: { display: false }
+        }
+      }
+    });
+  }
+
+  // ── Pie: Expense Breakdown ───────────────────────────────────────────────
+  const pieExpCtx = document.getElementById('pieExpenseChart');
+  if (pieExpCtx) {
+    if (dashPieExpense) dashPieExpense.destroy();
+    dashPieExpense = new Chart(pieExpCtx.getContext('2d'), {
+      type: 'doughnut',
+      data: {
+        labels: ['Gasto Frec.', 'Gasto No Frec.'],
+        datasets: [{
+          data: [totFreqExp, totNoFreqExp],
+          backgroundColor: ['#ff5252', '#b71c1c'],
+          borderWidth: 0,
+          hoverOffset: 8
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, cutout: '68%',
+        plugins: {
+          legend: { position: 'bottom', labels: { color: '#8b92a8', font: { size: 11, family: 'Outfit' }, boxWidth: 12, padding: 12 } },
+          tooltip: { backgroundColor: 'rgba(22,25,38,0.95)', padding: 10, cornerRadius: 8,
+            callbacks: { label: ctx => ' S/ ' + ctx.parsed.toFixed(2) }
+          },
+          datalabels: { display: false }
+        }
+      }
+    });
+  }
+
+  // ── Bar: Monthly Trend ───────────────────────────────────────────────────
+  const trendCtx = document.getElementById('summaryTrendChart');
+  if (trendCtx) {
+    if (dashTrend) dashTrend.destroy();
+    const mLabels = monthNames.map(m => m.substring(0, 3));
+    const incData = new Array(12).fill(0);
+    const expData = new Array(12).fill(0);
+
+    yearData.forEach(s => {
+      const mName = s.monthYear.split(' ')[0].toLowerCase().substring(0, 3);
+      const idx = monthNames.findIndex(m => m.toLowerCase().startsWith(mName));
+      if (idx > -1) {
+        incData[idx] = (Number(s.freqIncome) || 0) + (Number(s.nonFreqIncome) || 0);
+        expData[idx] = Math.abs(Number(s.totalExpense) || 0);
+      }
+    });
+
+    Chart.register(ChartDataLabels);
+    dashTrend = new Chart(trendCtx.getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels: mLabels,
+        datasets: [
+          { label: 'Ingresos', data: incData, backgroundColor: 'rgba(0,230,118,0.75)', borderRadius: 6, barPercentage: 0.7 },
+          { label: 'Gastos',   data: expData, backgroundColor: 'rgba(255,82,82,0.75)',  borderRadius: 6, barPercentage: 0.7 }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'top', labels: { color: '#8b92a8', font: { size: 11, family: 'Outfit' }, boxWidth: 12, padding: 14 } },
+          tooltip: {
+            backgroundColor: 'rgba(22,25,38,0.95)', titleColor: '#fff', bodyColor: '#ccc',
+            borderColor: '#2a2f45', borderWidth: 1, padding: 10, cornerRadius: 8,
+            callbacks: { label: ctx => ' S/ ' + ctx.parsed.y.toFixed(2) }
+          },
+          datalabels: { display: false }
+        },
+        scales: {
+          y: { beginAtZero: true, grid: { color: '#2a2f45', drawBorder: false }, ticks: { color: '#8b92a8', font: { family: 'Outfit', size: 10 }, callback: v => 'S/' + (v >= 1000 ? (v/1000).toFixed(1)+'k' : v) }, border: { display: false } },
+          x: { grid: { display: false }, ticks: { color: '#8b92a8', font: { family: 'Outfit', size: 10 } }, border: { display: false } }
+        },
+        interaction: { mode: 'index', intersect: false },
+        animation: { duration: 700, easing: 'easeOutQuart' }
+      }
+    });
+  }
+
+  // ── Detail Table ─────────────────────────────────────────────────────────
+  const tbody = document.getElementById('summaryTableBody');
+  tbody.innerHTML = '';
+  yearData.forEach(row => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td style="font-weight: 500;">${row.monthYear}</td>
+      <td style="font-weight:500;">${row.monthYear}</td>
       <td class="amount-positive">${formatMoney(row.freqIncome)}</td>
       <td class="amount-positive">${formatMoney(row.nonFreqIncome)}</td>
       <td class="amount-negative">${formatMoney(row.freqExpense)}</td>
       <td class="amount-negative">${formatMoney(row.nonFreqExpense)}</td>
-      <td class="${row.netMonthly >= 0 ? 'amount-positive' : 'amount-negative'}" style="font-weight: 700;">
+      <td class="amount-negative">${formatMoney(row.totalExpense)}</td>
+      <td class="${row.netMonthly >= 0 ? 'amount-positive' : 'amount-negative'}" style="font-weight:700;">
         ${formatMoney(row.netMonthly)}
       </td>
     `;
     tbody.appendChild(tr);
   });
   
-  // Refresh header stats in case we updated via logic or edit-stat
-  sortAndRender(); 
+  // Refresh header stats
+  sortAndRender();
 }
+
 
 // ============================================
 // FREQ INCOME LOGIC
