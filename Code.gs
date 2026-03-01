@@ -392,3 +392,55 @@ function searchTransactions(searchText, limit) {
   
   return results;
 }
+
+/**
+ * Actualiza el Ingreso Frecuente en la hoja de resumen
+ * @param {string} monthStr - Nombre corto del mes o completo más año, compatible con getMonthlySummaryData
+ * @param {number} amount - Nuevo monto
+ */
+function updateFreqIncome(monthStr, amount) {
+  var sheet = getSheetByName('RESUMEN POR MES');
+  if (!sheet) throw new Error('Hoja RESUMEN POR MES no encontrada');
+  
+  var data = sheet.getDataRange().getValues();
+  var headerRowIndex = -1;
+  
+  // Buscar fila de encabezado
+  for (var i = 0; i < data.length; i++) {
+    var cell = String(data[i][0]).toUpperCase().trim();
+    if (cell.indexOf("MES") > -1) {
+      headerRowIndex = i;
+      break;
+    }
+  }
+  if (headerRowIndex === -1) headerRowIndex = 3;
+  
+  // Buscar la fila correspondiente al mes
+  var rowIndexToUpdate = -1;
+  for (var i = headerRowIndex + 1; i < data.length; i++) {
+    var val = data[i][0];
+    if (Object.prototype.toString.call(val) === '[object Date]') {
+      var mNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+      try {
+        val = mNames[val.getMonth()] + " " + val.getFullYear();
+      } catch(e) {
+        val = String(val);
+      }
+    } else {
+      val = String(val);
+    }
+    
+    // Comparación simple, asume que from Frontend enviamos exactamente el mismo formato
+    if (val === monthStr) {
+      rowIndexToUpdate = i + 1; // 1-based index
+      break;
+    }
+  }
+  
+  if (rowIndexToUpdate > -1) {
+    sheet.getRange(rowIndexToUpdate, 2).setValue(amount); // Columna B es index 2
+    return { success: true, message: 'Ingreso frecuente actualizado' };
+  } else {
+    throw new Error('Mes no encontrado en el resumen');
+  }
+}

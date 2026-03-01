@@ -12,12 +12,16 @@ var currentSort = { col: 'date', order: 'desc' };
 var deleteRowId = null;
 var myChart = null;
 
+var lastDeletedTransaction = null;
+var undoTimeout = null;
+
 const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 
 // DOM Elements
 const tabButtons = document.querySelectorAll('.nav-item');
 const contentViews = document.querySelectorAll('.content-view');
 const fabAdd = document.getElementById('fabAdd');
+const fabUndo = document.getElementById('fabUndo');
 const addModal = document.getElementById('addModal');
 const deleteModal = document.getElementById('deleteModal');
 const closeModal = document.getElementById('closeModal');
@@ -27,6 +31,15 @@ const btnConfirmDelete = document.getElementById('btnConfirmDelete');
 const addForm = document.getElementById('addForm');
 const inputAmount = document.getElementById('inputAmount');
 const inputType = document.getElementById('inputType');
+
+// Freq Income Modal Elements
+const freqIncomeModal = document.getElementById('freqIncomeModal');
+const closeFreqIncomeModal = document.getElementById('closeFreqIncomeModal');
+const btnCancelFreqIncome = document.getElementById('btnCancelFreqIncome');
+const freqIncomeForm = document.getElementById('freqIncomeForm');
+const inputFreqIncomeAmount = document.getElementById('inputFreqIncomeAmount');
+const btnEditFreqIncome = document.getElementById('btnEditFreqIncome');
+const freqIncomeMonthLabel = document.getElementById('freqIncomeMonthLabel');
 
 // Navigation
 const prevMonthBtn = document.getElementById('prevMonthBtn');
@@ -196,20 +209,24 @@ function setupEventListeners() {
       // Update page title
       const titles = {
         'expenses': 'Tabla de Gastos',
-        'summary': 'Resumen Mensual',
+        'summary': 'Resumen Anual',
         'charts': 'Gráficos Anuales'
       };
       document.getElementById('pageTitle').textContent = titles[tabName];
       
+      const mobileControls = document.querySelector('.mobile-controls');
       if (tabName === 'charts') {
         setTimeout(renderCharts, 100);
-        // Ocultar controles de fecha en móvil para vista de gráficos
-        const mobileControls = document.querySelector('.mobile-controls');
-        if (mobileControls) mobileControls.style.display = 'none';
+        if (mobileControls) mobileControls.classList.add('hidden-nav');
       } else {
-        // Mostrar en otras vistas
-        const mobileControls = document.querySelector('.mobile-controls');
-        if (mobileControls) mobileControls.style.display = 'flex';
+        // Mostrar controles de navegación de fecha solo en la pestaña expenses en móvil
+        if (mobileControls) {
+          if (tabName === 'expenses') {
+            mobileControls.classList.remove('hidden-nav');
+          } else {
+            mobileControls.classList.add('hidden-nav');
+          }
+        }
       }
     });
   });
@@ -276,11 +293,22 @@ function setupEventListeners() {
       }
       
       if (editMode === false) {
-        const calculatedType = result > 0 ? 'INGRESO NO FRECUENTE' : 'GASTO NO FRECUENTE';
-        if (window.setDropdownValue) {
-          window.setDropdownValue(calculatedType);
-        } else {
-          inputType.value = calculatedType;
+        const currentType = inputType.value;
+        const isCurrentlyIncome = currentType.startsWith('INGRESO');
+        const isCurrentlyFrec = currentType.includes('FRECUENTE') && !currentType.includes('NO');
+        
+        // Solo auto-cambiar si hay un cambio de polaridad (positivo/negativo)
+        // pero preservando la preferencia de FRECUENTE vs NO FRECUENTE
+        if (result > 0 && !isCurrentlyIncome) {
+          // Cambiar de gasto a ingreso, preservando la frecuencia
+          const newType = isCurrentlyFrec ? 'INGRESO FRECUENTE' : 'INGRESO NO FRECUENTE';
+          if (window.setDropdownValue) window.setDropdownValue(newType);
+          else inputType.value = newType;
+        } else if (result <= 0 && isCurrentlyIncome) {
+          // Cambiar de ingreso a gasto, preservando la frecuencia
+          const newType = isCurrentlyFrec ? 'GASTO FRECUENTE' : 'GASTO NO FRECUENTE';
+          if (window.setDropdownValue) window.setDropdownValue(newType);
+          else inputType.value = newType;
         }
       }
     } else {
@@ -296,6 +324,20 @@ function setupEventListeners() {
       renderCharts();
     });
   }
+
+  // Freq Income Additions
+  
+  const hideFreqModal = () => {
+    freqIncomeModal.classList.add('hidden');
+    freqIncomeForm.reset();
+  };
+
+  btnEditFreqIncome.addEventListener('click', openFreqIncomeModal);
+  closeFreqIncomeModal.addEventListener('click', hideFreqModal);
+  btnCancelFreqIncome.addEventListener('click', hideFreqModal);
+  freqIncomeForm.addEventListener('submit', handleFreqIncomeSubmit);
+  
+  if(fabUndo) fabUndo.addEventListener('click', undoDelete);
 
   // Form Submit
   addForm.addEventListener('submit', handleFormSubmit);
@@ -349,8 +391,7 @@ function setupCustomDropdown() {
   const options = [
     { val: 'GASTO NO FRECUENTE', label: 'Gasto No Frecuente', color: 'dot-yellow' },
     { val: 'GASTO FRECUENTE', label: 'Gasto Frecuente', color: 'dot-red' },
-    { val: 'INGRESO NO FRECUENTE', label: 'Ingreso No Frecuente', color: 'dot-green' },
-    { val: 'INGRESO FRECUENTE', label: 'Ingreso Frecuente', color: 'dot-blue' }
+    { val: 'INGRESO NO FRECUENTE', label: 'Ingreso No Frecuente', color: 'dot-green' }
   ];
   
   optionsContainer.innerHTML = '';
@@ -610,8 +651,14 @@ function renderTransactions(data, updateCache = true) {
   
   let totalIncome = 0;
   let totalExpense = 0;
+  let freqExpense = 0;
+  let noFreqExpense = 0;
+  let noFreqIncome = 0;
 
-  if (!data || data.length === 0) {
+  // Filtrar 'INGRESO FRECUENTE' de la tabla para no mostrarlo
+  const filteredData = data.filter(t => t.type !== 'INGRESO FRECUENTE');
+
+  if (!filteredData || filteredData.length === 0) {
     tbody.innerHTML = `
       <tr>
         <td colspan="5" style="text-align:center; padding: 40px; color: var(--text-secondary);">
@@ -620,14 +667,21 @@ function renderTransactions(data, updateCache = true) {
         </td>
       </tr>
     `;
-    updateHeaderStats(0, 0);
+    updateHeaderStats(0, 0, 0, 0, 0);
     return;
   }
 
-  data.forEach(tx => {
+  filteredData.forEach(tx => {
     const amt = Number(tx.amount);
-    if (amt > 0) totalIncome += amt;
-    else totalExpense += amt;
+    if (amt > 0) {
+      totalIncome += amt;
+      noFreqIncome += amt;
+    }
+    else {
+      totalExpense += amt;
+      if (tx.type === 'GASTO FRECUENTE') freqExpense += amt;
+      else noFreqExpense += amt;
+    }
     
     const row = document.createElement('tr');
     
@@ -650,7 +704,6 @@ function renderTransactions(data, updateCache = true) {
     let typePillClass = 'pill-neutral';
     if (tx.type === 'GASTO FRECUENTE') typePillClass = 'pill-red';
     if (tx.type === 'INGRESO NO FRECUENTE') typePillClass = 'pill-green';
-    if (tx.type === 'INGRESO FRECUENTE') typePillClass = 'pill-green';
 
     const detailText = tx.detail || '';
     const detailHtml = `
@@ -681,16 +734,31 @@ function renderTransactions(data, updateCache = true) {
     tbody.appendChild(row);
   });
   
-  updateHeaderStats(totalIncome, totalExpense);
+  updateHeaderStats(totalIncome, totalExpense, freqExpense, noFreqExpense, noFreqIncome);
   setTimeout(checkDetailOverflows, 0);
 }
 
-function updateHeaderStats(income, expense) {
-  const balance = income + expense;
+function updateHeaderStats(income, expense, freqExp, noFreqExp, noFreqInc) {
+  // Extraer el Ingreso Frecuente directamente del objeto 'summaries'
+  let freqInc = 0;
+  const currMonthYearStr = monthNames[currentMonth] + " " + currentYear;
+  if (summaries && summaries.length > 0) {
+    const summaryRow = summaries.find(s => s.monthYear === currMonthYearStr);
+    if (summaryRow) {
+      freqInc = Number(summaryRow.freqIncome) || 0;
+    }
+  }
+
+  // Sumar a los totales
+  const finalIncome = Number(income) + freqInc;
+  let balance = finalIncome + Number(expense);
   
-  document.getElementById('headerIncome').innerText = '+ S/ ' + income.toFixed(2);
-  document.getElementById('headerExpense').innerText = '- S/ ' + Math.abs(expense).toFixed(2);
-  document.getElementById('headerBalance').innerText = (balance >= 0 ? '+ S/ ' : '- S/ ') + Math.abs(balance).toFixed(2);
+  document.getElementById('statFreqIncome').innerText = '+ S/ ' + freqInc.toFixed(2);
+  document.getElementById('statNoFreqIncome').innerText = '+ S/ ' + Math.abs(noFreqInc).toFixed(2);
+  document.getElementById('statFreqExpense').innerText = '- S/ ' + Math.abs(freqExp).toFixed(2);
+  document.getElementById('statNoFreqExpense').innerText = '- S/ ' + Math.abs(noFreqExp).toFixed(2);
+  document.getElementById('statTotalExpense').innerText = '- S/ ' + Math.abs(expense).toFixed(2);
+  document.getElementById('statBalance').innerText = (balance >= 0 ? '+ S/ ' : '- S/ ') + Math.abs(balance).toFixed(2);
 }
 
 function escapeHtml(text) {
@@ -756,19 +824,31 @@ function confirmDelete(rowId) {
     btn.disabled = true;
   }
   
+  // Guardamos la transacción antes de eliminarla por si quieren deshacer
+  lastDeletedTransaction = transactionCache.find(t => t.rowId === rowId);
+  
   google.script.run
     .withSuccessHandler(() => {
       deleteModal.classList.add('hidden');
       
-      // ACTUALIZACIÓN LOCAL: Eliminar del cache y re-renderizar
       if (deleteRowId) {
         transactionCache = transactionCache.filter(t => t.rowId !== deleteRowId);
         sortAndRender();
-        loadSummary(); // Actualizar el resumen también por si acaso
+        loadSummary(); 
       }
       
       deleteRowId = null;
       showToast('Registro eliminado correctamente', 'success');
+      
+      // Mostrar y configurar el botón deshacer
+      if(fabUndo && lastDeletedTransaction) {
+        fabUndo.classList.remove('hidden');
+        if(undoTimeout) clearTimeout(undoTimeout);
+        undoTimeout = setTimeout(() => {
+          fabUndo.classList.add('hidden');
+          lastDeletedTransaction = null;
+        }, 12000); // 12 seconds to undo
+      }
     })
     .withFailureHandler((error) => {
       deleteModal.classList.add('hidden');
@@ -781,8 +861,67 @@ function confirmDelete(rowId) {
     .deleteTransaction(rowId);
 }
 
+window.undoDelete = function() {
+  if(!lastDeletedTransaction) return;
+  
+  // Ocultar botón inmediatamente
+  fabUndo.classList.add('hidden');
+  if(undoTimeout) clearTimeout(undoTimeout);
+  
+  // Convertir rawDate (ISO string) a formato YYYY-MM-DD que espera el server
+  let dateStr = '';
+  if (lastDeletedTransaction.rawDate) {
+    const d = new Date(lastDeletedTransaction.rawDate);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    dateStr = `${yyyy}-${mm}-${dd}`;
+  } else {
+    // Si no hay rawDate intentamos construir: lastDeletedTransaction.date es "28-feb-26"
+    const parts = lastDeletedTransaction.date.split('-');
+    const mMap = { ene:0,feb:1,mar:2,abr:3,may:4,jun:5,jul:6,ago:7,sep:8,oct:9,nov:10,dic:11 };
+    if (parts.length === 3) {
+      const mIndex = mMap[parts[1].toLowerCase()];
+      let yr = parseInt(parts[2]);
+      if (yr < 100) yr += 2000;
+      const d = new Date(yr, mIndex, parseInt(parts[0]));
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      dateStr = `${yyyy}-${mm}-${dd}`;
+    }
+  }
+  
+  const txData = {
+    date: dateStr,
+    amount: lastDeletedTransaction.amount,
+    detail: lastDeletedTransaction.detail,
+    type: lastDeletedTransaction.type
+  };
+  
+  const finishUndo = (restoredTransaction) => {
+    if (restoredTransaction) {
+      transactionCache.unshift(restoredTransaction);
+      sortAndRender();
+      loadSummary();
+    } else {
+      // Si la fecha no cae en el mes actual simplemente recargamos
+      loadTransactions();
+    }
+    lastDeletedTransaction = null;
+    showToast('Acción revertida correctamente', 'success');
+  };
+  
+  google.script.run
+    .withSuccessHandler(finishUndo)
+    .withFailureHandler((err) => {
+      showToast('Error al deshacer: ' + err.message, 'error');
+    })
+    .addTransactionOptimized(txData, currentMonth, currentYear);
+}
+
 // ============================================
-// MODAL
+// MODAL & FORM LOGIC
 // ============================================
 function openModal(data = null) {
   addModal.classList.remove('hidden');
@@ -956,6 +1095,70 @@ function renderSummaryTable(data) {
     `;
     tbody.appendChild(tr);
   });
+  
+  // Refresh header stats in case we updated via logic or edit-stat
+  sortAndRender(); 
+}
+
+// ============================================
+// FREQ INCOME LOGIC
+// ============================================
+window.openFreqIncomeModal = function() {
+  const currMonthYearStr = monthNames[currentMonth] + " " + currentYear;
+  freqIncomeMonthLabel.textContent = `(${currMonthYearStr})`;
+  
+  let currentVal = 0;
+  if (summaries && summaries.length > 0) {
+    const summaryRow = summaries.find(s => s.monthYear === currMonthYearStr);
+    if (summaryRow) currentVal = Number(summaryRow.freqIncome) || 0;
+  }
+  
+  inputFreqIncomeAmount.value = currentVal.toFixed(2);
+  freqIncomeModal.classList.remove('hidden');
+};
+
+function handleFreqIncomeSubmit(e) {
+  e.preventDefault();
+  
+  const amount = Number(inputFreqIncomeAmount.value);
+  if (isNaN(amount) || amount < 0) {
+    showToast('Ingrese un monto válido referencialmente', 'error');
+    return;
+  }
+  
+  const currMonthYearStr = monthNames[currentMonth] + " " + currentYear;
+  
+  const submitBtn = document.getElementById('btnSaveFreqIncome');
+  const ogText = submitBtn.innerHTML;
+  submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+  submitBtn.disabled = true;
+  
+  google.script.run
+    .withSuccessHandler((res) => {
+      submitBtn.innerHTML = ogText;
+      submitBtn.disabled = false;
+      freqIncomeModal.classList.add('hidden');
+      
+      // Optimizacion: actualizar array local summaries inmediatamente
+      if (summaries) {
+        const row = summaries.find(s => s.monthYear === currMonthYearStr);
+        if (row) {
+           row.freqIncome = amount;
+           // force re-calc local fields
+           row.totalIncome = amount + Number(row.nonFreqIncome);
+           row.netMonthly = row.totalIncome + Number(row.totalExpense);
+        }
+      }
+      
+      showToast(res.message || 'Actualizado correctamente', 'success');
+      renderSummaryTable(summaries); // Refresca y trigger sortAndRender headers
+    })
+    .withFailureHandler((err) => {
+      submitBtn.innerHTML = ogText;
+      submitBtn.disabled = false;
+      showToast('Error: ' + err.message, 'error');
+    })
+    .updateFreqIncome(currMonthYearStr, amount);
 }
 
 // ============================================

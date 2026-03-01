@@ -73,7 +73,7 @@
           <h3>VISTA</h3>
           <nav class="nav-menu">
             <button class="nav-item active" data-tab="expenses"><i class="fa-solid fa-table"></i> Tabla de Gastos</button>
-            <button class="nav-item" data-tab="summary"><i class="fa-solid fa-chart-column"></i> Resumen Mensual</button>
+            <button class="nav-item" data-tab="summary"><i class="fa-solid fa-chart-column"></i> Resumen Anual</button>
             <button class="nav-item" data-tab="charts"><i class="fa-solid fa-chart-line"></i> Gráficos Anuales</button>
           </nav>
         </div>
@@ -114,36 +114,6 @@
                 <p id="pageSubtitle">Enero 2026</p>
             </div>
           </div>
-          
-          <div class="header-stats">
-            <div class="stat-card income">
-              <div class="stat-icon-wrapper">
-                <i class="fa-solid fa-arrow-trend-up stat-icon"></i>
-              </div>
-              <div class="stat-content">
-                <span class="label">Ingresos</span>
-                <span class="value" id="headerIncome">+ S/ 0.00</span>
-              </div>
-            </div>
-            <div class="stat-card expense">
-              <div class="stat-icon-wrapper">
-                <i class="fa-solid fa-arrow-trend-down stat-icon"></i>
-              </div>
-              <div class="stat-content">
-                <span class="label">Gastos</span>
-                <span class="value" id="headerExpense">- S/ 0.00</span>
-              </div>
-            </div>
-            <div class="stat-card balance">
-              <div class="stat-icon-wrapper">
-                <i class="fa-solid fa-wallet stat-icon"></i>
-              </div>
-              <div class="stat-content">
-                <span class="label">Balance</span>
-                <span class="value" id="headerBalance">+ S/ 0.00</span>
-              </div>
-            </div>
-          </div>
         </header>
 
         <!-- Mobile Controls (Visible only on mobile) -->
@@ -167,7 +137,65 @@
 
         <!-- Content Views -->
         <div id="view-expenses" class="content-view active">
-          <div class="table-container">
+          <!-- DETAILED STRIPE (only visible here) -->
+          <div class="header-stats-grid">
+            <div class="stat-card income freq">
+              <div class="stat-icon-wrapper">
+                <i class="fa-solid fa-money-bill-trend-up stat-icon"></i>
+              </div>
+              <div class="stat-content">
+                <span class="label">Ing. Frec.</span>
+                <span class="value" id="statFreqIncome">+ S/ 0.00</span>
+              </div>
+              <button class="btn-edit-stat" id="btnEditFreqIncome"><i class="fa-solid fa-pencil"></i></button>
+            </div>
+            <div class="stat-card income no-freq">
+              <div class="stat-icon-wrapper">
+                <i class="fa-solid fa-arrow-trend-up stat-icon"></i>
+              </div>
+              <div class="stat-content">
+                <span class="label">Ing. No Frec.</span>
+                <span class="value" id="statNoFreqIncome">+ S/ 0.00</span>
+              </div>
+            </div>
+            <div class="stat-card expense freq">
+              <div class="stat-icon-wrapper">
+                <i class="fa-solid fa-credit-card stat-icon"></i>
+              </div>
+              <div class="stat-content">
+                <span class="label">Gasto Frec.</span>
+                <span class="value" id="statFreqExpense">- S/ 0.00</span>
+              </div>
+            </div>
+            <div class="stat-card expense no-freq">
+              <div class="stat-icon-wrapper">
+                <i class="fa-solid fa-arrow-trend-down stat-icon"></i>
+              </div>
+              <div class="stat-content">
+                <span class="label">Gasto No Frec.</span>
+                <span class="value" id="statNoFreqExpense">- S/ 0.00</span>
+              </div>
+            </div>
+            <div class="stat-card total-expense">
+              <div class="stat-icon-wrapper">
+                <i class="fa-solid fa-basket-shopping stat-icon"></i>
+              </div>
+              <div class="stat-content">
+                <span class="label">Gasto Total</span>
+                <span class="value" id="statTotalExpense">- S/ 0.00</span>
+              </div>
+            </div>
+            <div class="stat-card balance">
+              <div class="stat-icon-wrapper">
+                <i class="fa-solid fa-wallet stat-icon"></i>
+              </div>
+              <div class="stat-content">
+                <span class="label">Balance</span>
+                <span class="value" id="statBalance">+ S/ 0.00</span>
+              </div>
+            </div>
+          </div>
+          <div class="table-container mt-4">
             <table>
               <thead>
                 <tr>
@@ -233,11 +261,42 @@
 
       </main>
 
+      <!-- FAB Undo -->
+      <button class="fab-undo hidden" id="fabUndo">
+        <i class="fa-solid fa-rotate-left"></i>
+        <span>Deshacer</span>
+      </button>
+
       <!-- FAB -->
       <button class="fab" id="fabAdd">
         <i class="fa-solid fa-plus"></i>
         <span class="fab-tooltip">Nuevo</span>
       </button>
+    </div>
+
+    <!-- Freq Income Edit Modal -->
+    <div id="freqIncomeModal" class="modal-overlay hidden">
+      <div class="modal modal-small">
+        <div class="modal-header">
+          <h3><i class="fa-solid fa-money-bill-trend-up"></i> Ingreso Frecuente</h3>
+          <button class="close-modal" id="closeFreqIncomeModal"><i class="fa-solid fa-times"></i></button>
+        </div>
+        <div class="modal-body">
+          <form id="freqIncomeForm">
+            <div class="form-group">
+              <label>Monto <span id="freqIncomeMonthLabel"></span></label>
+              <div class="input-with-icon">
+                  <span class="currency-symbol">S/</span>
+                  <input type="number" id="inputFreqIncomeAmount" step="0.01" required>
+              </div>
+            </div>
+            <div class="modal-actions">
+              <button type="button" class="btn-cancel" id="btnCancelFreqIncome"><i class="fa-solid fa-times"></i> Cancelar</button>
+              <button type="submit" class="btn-save" id="btnSaveFreqIncome"><i class="fa-solid fa-save"></i> Guardar</button>
+            </div>
+          </form>
+        </div>
+      </div>
     </div>
 
     <!-- Modal -->
