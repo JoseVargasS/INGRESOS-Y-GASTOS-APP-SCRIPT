@@ -128,7 +128,48 @@ function getTransactions(month, year) {
 }
 
 /**
- * Agrega una nueva transacción
+ * Inserta una fila de manera cronológica devolviendo el ID de fila
+ */
+function insertRecordChronologically(sheet, dateObj, amount, detail, type) {
+  var lastRow = sheet.getLastRow();
+  var targetRow = lastRow + 1;
+  var targetDateMs = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate()).getTime();
+  
+  if (lastRow >= 2) {
+    var data = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (var i = 0; i < data.length; i++) {
+      var rowDate = data[i][0];
+      if (Object.prototype.toString.call(rowDate) === '[object Date]') {
+        var rDateMs = new Date(rowDate.getFullYear(), rowDate.getMonth(), rowDate.getDate()).getTime();
+        // Insertamos antes del primer registro que tenga una fecha estrictamente mayor
+        if (rDateMs > targetDateMs) {
+          targetRow = i + 2;
+          break;
+        }
+      }
+    }
+  }
+  
+  if (targetRow <= lastRow) {
+    sheet.insertRowBefore(targetRow);
+  }
+  
+  var amountIsFormula = String(amount).startsWith('=');
+  
+  sheet.getRange(targetRow, 1).setValue(dateObj);
+  if (amountIsFormula) {
+    sheet.getRange(targetRow, 2).setFormula(amount);
+  } else {
+    sheet.getRange(targetRow, 2).setValue(amount);
+  }
+  sheet.getRange(targetRow, 3).setValue(detail);
+  sheet.getRange(targetRow, 4).setValue(type);
+  
+  return targetRow;
+}
+
+/**
+ * Agrega una nueva transacción cronológicamente
  * @param {Object} transactionData - Datos de la transacción
  */
 function addTransaction(transactionData) {
@@ -138,18 +179,13 @@ function addTransaction(transactionData) {
   var parts = transactionData.date.split('-');
   var dateObj = new Date(parts[0], parts[1] - 1, parts[2]);
   
-  sheet.appendRow([
-    dateObj,
-    transactionData.amount,
-    transactionData.detail,
-    transactionData.type
-  ]);
+  insertRecordChronologically(sheet, dateObj, transactionData.amount, transactionData.detail, transactionData.type);
   
   return { success: true, message: 'Transacción agregada correctamente' };
 }
 
 /**
- * Agrega transacción optimizado - retorna datos formateados
+ * Agrega transacción optimizado de forma cronológica - retorna datos formateados
  * @param {Object} transactionData - Datos de la transacción
  * @param {number} month - Mes actual
  * @param {number} year - Año actual
@@ -161,22 +197,15 @@ function addTransactionOptimized(transactionData, month, year) {
   var parts = transactionData.date.split('-');
   var dateObj = new Date(parts[0], parts[1] - 1, parts[2]);
   
-  sheet.appendRow([
-    dateObj,
-    transactionData.amount,
-    transactionData.detail,
-    transactionData.type
-  ]);
-  
-  var lastRow = sheet.getLastRow();
+  var targetRow = insertRecordChronologically(sheet, dateObj, transactionData.amount, transactionData.detail, transactionData.type);
   
   // Si coincide con el filtro actual, retornar datos
   if (dateObj.getMonth() === month && dateObj.getFullYear() === year) {
-    var formula = sheet.getRange(lastRow, 2).getFormula();
-    var actualAmount = sheet.getRange(lastRow, 2).getValue();
+    var formula = sheet.getRange(targetRow, 2).getFormula();
+    var actualAmount = sheet.getRange(targetRow, 2).getValue();
     
     return {
-      rowId: lastRow,
+      rowId: targetRow,
       date: formatDateForSheet(dateObj),
       rawDate: dateObj.toISOString(),
       amount: actualAmount,
@@ -214,12 +243,18 @@ function editTransaction(rowId, transactionData) {
   
   try {
     rowId = parseInt(rowId);
-    sheet.getRange(rowId, 1, 1, 4).setValues([[
-      dateObj,
-      transactionData.amount,
-      transactionData.detail,
-      transactionData.type
-    ]]);
+    
+    // Al editar, la fecha tal vez cambie. Para simplificar, actualizamos los datos in-place en la fila dada.
+    var amountIsFormula = String(transactionData.amount).startsWith('=');
+    
+    sheet.getRange(rowId, 1).setValue(dateObj);
+    if (amountIsFormula) {
+      sheet.getRange(rowId, 2).setFormula(transactionData.amount);
+    } else {
+      sheet.getRange(rowId, 2).setValue(transactionData.amount);
+    }
+    sheet.getRange(rowId, 3).setValue(transactionData.detail);
+    sheet.getRange(rowId, 4).setValue(transactionData.type);
     
     // Obtener valores actualizados para el retorno optimizado
     var formula = sheet.getRange(rowId, 2).getFormula();
@@ -237,6 +272,56 @@ function editTransaction(rowId, transactionData) {
   } catch (e) {
     throw new Error('Error al editar: ' + e.toString());
   }
+}
+
+/**
+ * Funciones para mover transacciones arriba/abajo intercambiando filas
+ */
+function moveTransactionUp(rowId) {
+  var sheet = getSheetByName('INGRESOS Y GASTOS');
+  if (!sheet) throw new Error("No se encontró la hoja 'INGRESOS Y GASTOS'");
+  rowId = parseInt(rowId);
+  var target = rowId - 1;
+  // Solo se pueden mover a partir de la fila 3 (para ignorar intercambiar con cabecera en fila 1 y 2 que puede estar mal)
+  // Pero la tabla de transacciones de Apps Script asume header en la 1.
+  if (target < 2) return { success: false, message: 'Ya está en la primera fila' };
+  
+  swapRows(sheet, rowId, target);
+  return { success: true, message: 'Movido arriba', newRowId: target };
+}
+
+function moveTransactionDown(rowId) {
+  var sheet = getSheetByName('INGRESOS Y GASTOS');
+  if (!sheet) throw new Error("No se encontró la hoja 'INGRESOS Y GASTOS'");
+  rowId = parseInt(rowId);
+  var target = rowId + 1;
+  if (target > sheet.getLastRow()) return { success: false, message: 'Ya está en la última fila' };
+  
+  swapRows(sheet, rowId, target);
+  return { success: true, message: 'Movido abajo', newRowId: target };
+}
+
+function swapRows(sheet, rowId1, rowId2) {
+  // Solo obtener y setear valores planos de Date, Amount, Detail, y Type (Columnas A - D)
+  var range1 = sheet.getRange(rowId1, 1, 1, 4);
+  var range2 = sheet.getRange(rowId2, 1, 1, 4);
+  
+  var values1 = range1.getValues()[0];
+  var values2 = range2.getValues()[0];
+  
+  // Escribir los valores de forma plana e ignorar celdas con fórmulas dentro de las primeras 4 columnas que puedan haber existido por error
+  range1.setValues([values2]);
+  range2.setValues([values1]);
+}
+
+/**
+ * Función para swap rápido de filas
+ */
+function swapTransactions(rowId1, rowId2) {
+  var sheet = getSheetByName('INGRESOS Y GASTOS');
+  if (!sheet) throw new Error("No se encontró la hoja 'INGRESOS Y GASTOS'");
+  swapRows(sheet, parseInt(rowId1), parseInt(rowId2));
+  return { success: true };
 }
 
 /**

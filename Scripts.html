@@ -4,6 +4,7 @@
 // ============================================
 
 // Global State
+let currentTheme = localStorage.getItem('bucks_theme') || 'dark';
 var currentYear = 2026;
 var currentMonth = 0;
 var transactionCache = [];
@@ -65,6 +66,7 @@ const sidebarOverlay = document.getElementById('sidebarOverlay');
 // INICIALIZACIÓN
 // ============================================
 document.addEventListener('DOMContentLoaded', function() {
+  initTheme();
   const now = new Date();
   currentYear = now.getFullYear();
   currentMonth = now.getMonth();
@@ -149,6 +151,7 @@ function setupEventListeners() {
     updateHeaderDate();
     loadTransactions();
     showToast(`Navegando a ${monthNames[currentMonth]} ${currentYear}`, 'info');
+    document.querySelector('[data-tab="expenses"]').click();
   });
   
   // Custom Year Dropdown Setup
@@ -178,6 +181,7 @@ function setupEventListeners() {
 
       updateHeaderDate();
       loadTransactions();
+      document.querySelector('[data-tab="expenses"]').click();
     });
   }
   
@@ -192,6 +196,15 @@ function setupEventListeners() {
       if (window.innerWidth <= 768) {
         appSidebar.classList.remove('open');
         sidebarOverlay.classList.add('hidden');
+      }
+      
+      // Navigate down to expenses tab
+      const expenseTab = document.querySelector('.nav-item[data-tab="expenses"]');
+      if (expenseTab) {
+         expenseTab.click();
+      } else {
+         const fallback = document.querySelector('[data-tab="expenses"]');
+         if (fallback) fallback.click();
       }
     });
   });
@@ -213,10 +226,19 @@ function setupEventListeners() {
         'charts': 'Gráficos Anuales'
       };
       document.getElementById('pageTitle').textContent = titles[tabName];
+      const subtitleEl = document.getElementById('pageSubtitle');
+      if (tabName === 'expenses') {
+        subtitleEl.style.display = 'block';
+      } else {
+        subtitleEl.style.display = 'none';
+      }
       
       const mobileControls = document.querySelector('.mobile-controls');
       if (tabName === 'charts') {
         setTimeout(renderCharts, 100);
+        if (mobileControls) mobileControls.classList.add('hidden-nav');
+      } else if (tabName === 'summary') {
+        setTimeout(() => renderSummaryTable(summaries), 100);
         if (mobileControls) mobileControls.classList.add('hidden-nav');
       } else {
         // Mostrar controles de navegación de fecha solo en la pestaña expenses en móvil
@@ -228,8 +250,20 @@ function setupEventListeners() {
           }
         }
       }
+      
+      // Close sidebar automatically on mobile
+      if (!sidebarOverlay.classList.contains('hidden')) {
+        appSidebar.classList.remove('open');
+        sidebarOverlay.classList.add('hidden');
+      }
     });
   });
+
+  // Setup Theme Toggle Listener
+  const themeToggleParamBtn = document.getElementById('themeToggleBtn');
+  if (themeToggleParamBtn) {
+    themeToggleParamBtn.addEventListener('click', toggleTheme);
+  }
   
   // Sorting Headers
   document.querySelectorAll('th[data-sort]').forEach(th => {
@@ -507,8 +541,10 @@ function setupYearDropdown() {
 function updateYearUI(year) {
   const hidden = document.getElementById('yearSelect');
   const text = document.getElementById('yearSelectedText');
+  const quickMonthsYearText = document.getElementById('quickMonthsYearText');
   if(hidden) hidden.value = year;
   if(text) text.textContent = year;
+  if(quickMonthsYearText) quickMonthsYearText.textContent = ' ' + year;
   currentYear = year;
 }
 
@@ -716,7 +752,10 @@ function renderTransactions(data, updateCache = true) {
     `;
     
     row.innerHTML = `
-      <td style="white-space: nowrap;">${tx.date}</td>
+      <td style="white-space: nowrap;">
+        <i class="fa-solid fa-grip-lines drag-handle"></i>
+        ${tx.date}
+      </td>
       <td class="${amountClass}">${amt >= 0 ? '+ S/ ' : '- S/ '} ${Math.abs(amt).toFixed(2)}</td>
       <td>${detailHtml}</td>
       <td><span class="${typePillClass}">${abbreviateType(tx.type)}</span></td>
@@ -731,6 +770,28 @@ function renderTransactions(data, updateCache = true) {
         </div>
       </td>
     `;
+    
+    // Add Drag & Drop attributes
+    row.draggable = true;
+    row.dataset.rowId = tx.rowId;
+    row.addEventListener('dragstart', handleDragStart);
+    row.addEventListener('dragover', handleDragOver);
+    row.addEventListener('dragleave', handleDragLeave);
+    row.addEventListener('drop', handleDrop);
+    row.addEventListener('dragend', handleDragEnd);
+    
+    // Add lifting visual feedback listeners
+    const handle = row.querySelector('.drag-handle');
+    if (handle) {
+      const lift = () => row.classList.add('drag-lifted');
+      const dropLift = () => row.classList.remove('drag-lifted');
+      handle.addEventListener('mousedown', lift);
+      handle.addEventListener('touchstart', lift, {passive: true});
+      row.addEventListener('mouseup', dropLift);
+      row.addEventListener('touchend', dropLift);
+      row.addEventListener('dragend', dropLift);
+    }
+    
     tbody.appendChild(row);
   });
   
@@ -816,6 +877,75 @@ window.showDeleteModal = function(rowId) {
   deleteRowId = rowId;
   deleteModal.classList.remove('hidden');
 };
+
+// ============================================
+// DRAG & DROP LOGIC
+// ============================================
+let dragSrcEl = null;
+
+function handleDragStart(e) {
+  if (e.target.tagName.toLowerCase() !== 'tr') return;
+  dragSrcEl = e.target;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', e.target.dataset.rowId);
+  setTimeout(() => {
+    e.target.classList.remove('drag-lifted');
+    e.target.classList.add('dragging');
+  }, 50);
+}
+
+function handleDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  if (dragSrcEl !== this) {
+    document.querySelectorAll('#transactionsTableBody tr').forEach(r => r.classList.remove('drag-over'));
+    this.classList.add('drag-over');
+  }
+  return false;
+}
+
+function handleDragLeave(e) {
+  this.classList.remove('drag-over');
+}
+
+function handleDrop(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  this.classList.remove('drag-over');
+  document.querySelectorAll('#transactionsTableBody tr').forEach(r => r.classList.remove('drag-over'));
+  
+  if (dragSrcEl !== this) {
+    const srcRowId = dragSrcEl.dataset.rowId;
+    const targetRowId = this.dataset.rowId;
+    
+    // Swap contents in DOM instantly
+    const srcHTML = dragSrcEl.innerHTML;
+    dragSrcEl.innerHTML = this.innerHTML;
+    this.innerHTML = srcHTML;
+    
+    // Swap dataset row IDs
+    dragSrcEl.dataset.rowId = targetRowId;
+    this.dataset.rowId = srcRowId;
+    
+    // Background update Google Script (Silently, no visual reload on success)
+    google.script.run
+      .withFailureHandler(err => {
+         showToast('Error moviendo celda: ' + err.message, 'error');
+         loadTransactions(); 
+      })
+      .swapTransactions(srcRowId, targetRowId);
+  }
+  return false;
+}
+
+function handleDragEnd(e) {
+  e.target.classList.remove('dragging');
+  document.querySelectorAll('#transactionsTableBody tr').forEach(row => {
+    row.classList.remove('dragging');
+  });
+}
+
+
 
 function confirmDelete(rowId) {
   const btn = document.querySelector(`button[onclick="showDeleteModal(${rowId})"]`);
@@ -1078,6 +1208,8 @@ function renderSummaryTable(data) {
       '<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--text-secondary);">No hay datos</td></tr>';
     return;
   }
+  
+  Chart.register(ChartDataLabels);
 
   // ── Extract available years ──────────────────────────────────────────────
   const yearsSet = new Set();
@@ -1086,7 +1218,7 @@ function renderSummaryTable(data) {
     const parts = s.monthYear.split(' ');
     if (parts.length >= 2) yearsSet.add(parts[parts.length - 1]);
   });
-  const years = Array.from(yearsSet).sort().reverse();
+  const years = ['Todos'].concat(Array.from(yearsSet).sort().reverse());
 
   // Default to most-recent year on first render
   if (!summarySelectedYear || !years.includes(summarySelectedYear)) {
@@ -1108,7 +1240,7 @@ function renderSummaryTable(data) {
   });
 
   // ── Filter data for selected year ────────────────────────────────────────
-  const yearData = data.filter(s => s.monthYear && s.monthYear.endsWith(summarySelectedYear));
+  const yearData = summarySelectedYear === 'Todos' ? data : data.filter(s => s.monthYear && s.monthYear.endsWith(summarySelectedYear));
 
   // ── KPI Aggregates ───────────────────────────────────────────────────────
   let totFreqInc = 0, totNoFreqInc = 0, totFreqExp = 0, totNoFreqExp = 0;
@@ -1133,31 +1265,51 @@ function renderSummaryTable(data) {
   srEl.textContent = savingsRate + '%';
   srEl.style.color = savingsRate >= 0 ? 'var(--accent-yellow)' : 'var(--accent-red)';
 
+  // Get dynamic colors depending on theme
+  const getVar = (name) => getComputedStyle(document.body).getPropertyValue(name).trim() || '#fff';
+  const textBodyColor = getVar('--text-primary');
+  const textMuted = getVar('--text-secondary');
+  const dashBg = getVar('--bg-dark');
+  const pieBorderColor = currentTheme === 'light' ? '#ffffff' : '#161926';
+
   // ── Pie: Income Breakdown ────────────────────────────────────────────────
   const pieIncCtx = document.getElementById('pieIncomeChart');
   if (pieIncCtx) {
     if (dashPieIncome) dashPieIncome.destroy();
     dashPieIncome = new Chart(pieIncCtx.getContext('2d'), {
-      type: 'doughnut',
+      type: 'pie',
       data: {
         labels: ['Ing. Frecuente', 'Ing. No Frec.'],
         datasets: [{
           data: [totFreqInc, totNoFreqInc],
           backgroundColor: ['#00e676', '#00b0ff'],   // Green vs Cyan Blue — high contrast
-          borderColor: ['#003d1f', '#003366'],
+          borderColor: pieBorderColor,
           borderWidth: 2,
           hoverOffset: 10
         }]
       },
       options: {
-        responsive: true, maintainAspectRatio: false, cutout: '70%',
+        responsive: true, maintainAspectRatio: false,
         plugins: {
-          legend: { position: 'bottom', labels: { color: '#b0b8cc', font: { size: 11, family: 'Outfit' }, boxWidth: 12, padding: 14 } },
-          tooltip: { backgroundColor: 'rgba(14,18,30,0.97)', padding: 12, cornerRadius: 10, bodyColor: '#fff',
+          legend: { position: 'bottom', labels: { color: textMuted, font: { size: 11, family: 'Outfit' }, boxWidth: 12, padding: 14 } },
+          tooltip: { backgroundColor: dashBg === '#f0f4f8' ? 'rgba(255,255,255,0.97)' : 'rgba(14,18,30,0.97)', padding: 12, cornerRadius: 10, bodyColor: textBodyColor, titleColor: textBodyColor, borderColor: getVar('--border-color'), borderWidth: 1,
             callbacks: { label: ctx => ` S/ ${ctx.parsed.toFixed(2)}` }
           },
-          datalabels: { display: false }
-        }
+          datalabels: { 
+            display: true,
+            color: '#E9F2E9',
+            formatter: (value, ctx) => {
+              let sum = 0;
+              let dataArr = ctx.chart.data.datasets[0].data;
+              dataArr.forEach(data => { sum += Number(data); });
+              if (sum === 0) return '0%';
+              let percentage = (value * 100 / sum).toFixed(1) + "%";
+              return value > 0 ? percentage : '';
+            },
+            font: { weight: 'bold', size: 13, family: 'Outfit' }
+          }
+        },
+        animation: { animateRotate: true, animateScale: true, duration: 900, easing: 'easeOutCubic' }
       }
     });
   }
@@ -1167,26 +1319,39 @@ function renderSummaryTable(data) {
   if (pieExpCtx) {
     if (dashPieExpense) dashPieExpense.destroy();
     dashPieExpense = new Chart(pieExpCtx.getContext('2d'), {
-      type: 'doughnut',
+      type: 'pie',
       data: {
         labels: ['Gasto Frec.', 'Gasto No Frec.'],
         datasets: [{
           data: [totFreqExp, totNoFreqExp],
           backgroundColor: ['#ff3d00', '#ffd740'],   // Vivid Red vs Amber — high contrast
-          borderColor: ['#3d0000', '#3d3000'],
+          borderColor: pieBorderColor,
           borderWidth: 2,
           hoverOffset: 10
         }]
       },
       options: {
-        responsive: true, maintainAspectRatio: false, cutout: '70%',
+        responsive: true, maintainAspectRatio: false,
         plugins: {
-          legend: { position: 'bottom', labels: { color: '#b0b8cc', font: { size: 11, family: 'Outfit' }, boxWidth: 12, padding: 14 } },
-          tooltip: { backgroundColor: 'rgba(14,18,30,0.97)', padding: 12, cornerRadius: 10, bodyColor: '#fff',
+          legend: { position: 'bottom', labels: { color: textMuted, font: { size: 11, family: 'Outfit' }, boxWidth: 12, padding: 14 } },
+          tooltip: { backgroundColor: dashBg === '#f0f4f8' ? 'rgba(255,255,255,0.97)' : 'rgba(14,18,30,0.97)', padding: 12, cornerRadius: 10, bodyColor: textBodyColor, titleColor: textBodyColor, borderColor: getVar('--border-color'), borderWidth: 1,
             callbacks: { label: ctx => ` S/ ${ctx.parsed.toFixed(2)}` }
           },
-          datalabels: { display: false }
-        }
+          datalabels: { 
+            display: true,
+            color: '#E9F2E9',
+            formatter: (value, ctx) => {
+              let sum = 0;
+              let dataArr = ctx.chart.data.datasets[0].data;
+              dataArr.forEach(data => { sum += Number(data); });
+              if (sum === 0) return '0%';
+              let percentage = (value * 100 / sum).toFixed(1) + "%";
+              return value > 0 ? percentage : '';
+            },
+            font: { weight: 'bold', size: 13, family: 'Outfit' }
+          }
+        },
+        animation: { animateRotate: true, animateScale: true, duration: 900, easing: 'easeOutCubic' }
       }
     });
   }
@@ -1203,8 +1368,8 @@ function renderSummaryTable(data) {
       const mName = s.monthYear.split(' ')[0].toLowerCase().substring(0, 3);
       const idx = monthNames.findIndex(m => m.toLowerCase().startsWith(mName));
       if (idx > -1) {
-        incData[idx] = (Number(s.freqIncome) || 0) + (Number(s.nonFreqIncome) || 0);
-        expData[idx] = Math.abs(Number(s.totalExpense) || 0);
+        incData[idx] += (Number(s.freqIncome) || 0) + (Number(s.nonFreqIncome) || 0);
+        expData[idx] += Math.abs(Number(s.totalExpense) || 0);
       }
     });
 
@@ -1216,8 +1381,8 @@ function renderSummaryTable(data) {
       data: {
         labels: mLabels,
         datasets: [
-          { label: 'Ingresos', data: incData, backgroundColor: 'rgba(0,230,118,0.8)', borderRadius: 8, barPercentage: 0.6, order: 2 },
-          { label: 'Gastos',   data: expData, backgroundColor: 'rgba(255,82,82,0.8)',  borderRadius: 8, barPercentage: 0.6, order: 2 },
+          { label: 'Ingresos', data: incData, backgroundColor: 'rgba(0,230,118,0.8)', borderRadius: 6, barPercentage: 0.6, order: 2 },
+          { label: 'Gastos',   data: expData, backgroundColor: 'rgba(255,82,82,0.8)',  borderRadius: 6, barPercentage: 0.6, order: 2 },
           {
             label: 'Neto', data: netData, type: 'line',
             borderColor: '#ffd740', backgroundColor: 'rgba(255, 215, 64, 0.1)',
@@ -1230,10 +1395,10 @@ function renderSummaryTable(data) {
       options: {
         responsive: true, maintainAspectRatio: false,
         plugins: {
-          legend: { position: 'top', labels: { color: '#b0b8cc', font: { size: 11, family: 'Outfit' }, boxWidth: 12, padding: 14, usePointStyle: true, pointStyle: 'circle' } },
+          legend: { position: 'top', labels: { color: textMuted, font: { size: 11, family: 'Outfit' }, boxWidth: 12, padding: 14, usePointStyle: true, pointStyle: 'circle' } },
           tooltip: {
-            backgroundColor: 'rgba(14,18,30,0.97)', titleColor: '#fff', bodyColor: '#ccc',
-            borderColor: '#2a2f45', borderWidth: 1, padding: 12, cornerRadius: 10,
+            backgroundColor: dashBg === '#f0f4f8' ? 'rgba(255,255,255,0.97)' : 'rgba(14,18,30,0.97)', titleColor: textBodyColor, bodyColor: textMuted,
+            borderColor: getVar('--border-color'), borderWidth: 1, padding: 12, cornerRadius: 10,
             callbacks: {
               label: ctx => ` ${ctx.dataset.label}: S/ ${ctx.parsed.y.toFixed(2)}`,
               labelColor: ctx => ({ borderColor: ctx.dataset.borderColor || ctx.dataset.backgroundColor, backgroundColor: ctx.dataset.borderColor || ctx.dataset.backgroundColor })
@@ -1242,8 +1407,8 @@ function renderSummaryTable(data) {
           datalabels: { display: false }
         },
         scales: {
-          y: { beginAtZero: true, grid: { color: 'rgba(42,47,69,0.6)', drawBorder: false }, ticks: { color: '#8b92a8', font: { family: 'Outfit', size: 10 }, callback: v => 'S/' + (v >= 1000 ? (v/1000).toFixed(1)+'k' : v) }, border: { display: false } },
-          x: { grid: { display: false }, ticks: { color: '#8b92a8', font: { family: 'Outfit', size: 10 } }, border: { display: false } }
+          y: { beginAtZero: true, grid: { color: getVar('--border-color-light').substring(0, 7) + '40', drawBorder: false }, ticks: { color: textMuted, font: { family: 'Outfit', size: 10 }, callback: v => 'S/' + (v >= 1000 ? (v/1000).toFixed(1)+'k' : v) }, border: { display: false } },
+          x: { grid: { display: false }, ticks: { color: textMuted, font: { family: 'Outfit', size: 10 } }, border: { display: false } }
         },
         interaction: { mode: 'index', intersect: false },
         animation: { duration: 700, easing: 'easeOutQuart' }
@@ -1274,6 +1439,32 @@ function renderSummaryTable(data) {
   sortAndRender();
 }
 
+
+// ============================================
+// THEME LOGIC
+// ============================================
+function initTheme() {
+  if (currentTheme === 'light') {
+    document.documentElement.setAttribute('data-theme', 'light');
+  } else {
+    document.documentElement.removeAttribute('data-theme');
+  }
+}
+
+function toggleTheme() {
+  currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('bucks_theme', currentTheme);
+  
+  initTheme();
+  
+  // Re-render charts so they pick up new CSS variables
+  if (document.getElementById('view-charts').classList.contains('active')) {
+    renderCharts();
+  }
+  if (document.getElementById('view-summary').classList.contains('active')) {
+    renderSummaryTable(summaries);
+  }
+}
 
 // ============================================
 // FREQ INCOME LOGIC
@@ -1399,14 +1590,14 @@ function renderCharts() {
       datasets.push({ 
         label: `Ingresos ${yr}`, 
         data: incomeData[yr], 
-        backgroundColor: getGradient('rgba(0, 230, 118, 0.8)', 'rgba(0, 230, 118, 0.3)'),
-        borderColor: '#00e676', borderWidth: 1, borderRadius: 5, barPercentage: 0.8, categoryPercentage: 0.7, order: 2 
+        backgroundColor: 'rgba(0, 230, 118, 1)',
+        borderColor: '#00e676', borderWidth: 1, borderRadius: 4, barPercentage: 0.8, categoryPercentage: 0.7, order: 2 
       });
       datasets.push({ 
         label: `Gastos ${yr}`, 
         data: expenseData[yr].map(v => -v), 
-        backgroundColor: getGradient('rgba(255, 82, 82, 0.8)', 'rgba(255, 82, 82, 0.3)'),
-        borderColor: '#ff5252', borderWidth: 1, borderRadius: 5, barPercentage: 0.8, categoryPercentage: 0.7, order: 2 
+        backgroundColor: 'rgba(255, 82, 82, 1)',
+        borderColor: '#ff5252', borderWidth: 1, borderRadius: 4, barPercentage: 0.8, categoryPercentage: 0.7, order: 2 
       });
     });
     const lineColors = ['#ffd740','#e040fb','#00b0ff','#ffab40'];
@@ -1430,10 +1621,10 @@ function renderCharts() {
       datasets.push({
         label: yr,
         data: yearsData[yr],
-        backgroundColor: getGradient(p.main + 'dd', p.main + '44'),
+        backgroundColor: p.main,
         borderColor: p.main,
         borderWidth: 1.5,
-        borderRadius: 8,
+        borderRadius: 4,
         barPercentage: sortedYears.length > 3 ? 0.9 : 0.7,
         categoryPercentage: 0.8,
         barThickness: isMobile ? 12 : undefined
@@ -1451,7 +1642,20 @@ function renderCharts() {
   if (myChart) myChart.destroy();
   Chart.register(ChartDataLabels);
 
-  const titles = { comparison:'Ingresos vs Gastos', totalExpense:'Gastos Totales', freqExpense:'Gasto Frecuente', nonFreqExpense:'Gasto No Frecuente', totalIncome:'Ingresos Totales', freqIncome:'Ingreso Frecuente', nonFreqIncome:'Ingreso No Frecuente', netMonthly:'Neto Mensual' };
+  const getVar = (name) => getComputedStyle(document.body).getPropertyValue(name).trim() || '#fff';
+  const textBodyColor = getVar('--text-primary');
+  const textMuted = getVar('--text-secondary');
+  const tooltipBg = currentTheme === 'light' ? 'rgba(255,255,255,0.95)' : 'rgba(10,14,28,0.95)';
+  const titles = {
+    comparison: 'Comparativa de ingresos vs gastos por año',
+    totalExpense: 'Comparativa de gastos totales por año',
+    freqExpense: 'Comparativa de Gasto Frecuente por año',
+    nonFreqExpense: 'Comparativa de Gasto No Frecuente por año',
+    totalIncome: 'Comparativa de ingresos totales por año',
+    freqIncome: 'Comparativa de Ingreso Frecuente por año',
+    nonFreqIncome: 'Comparativa de Ingreso No Frecuente por año',
+    netMonthly: 'Evolución del balance neto anual'
+  };
 
   myChart = new Chart(canvas.getContext('2d'), {
     type: 'bar',
@@ -1461,16 +1665,17 @@ function renderCharts() {
       layout: { padding: { top: isMobile ? 40 : 20, bottom: 10, left: 10, right: 10 } },
       plugins: {
         legend: {
-          display: true, position: 'top', align: 'center',
-          labels: { color:'#b0b8cc', usePointStyle:true, pointStyle:'circle', font:{ size:isMobile?10:12, family:'Outfit' }, padding:15, boxWidth:8 }
+          display: true, position: 'top', align: isMobile ? 'start' : 'center',
+          labels: { color: textMuted, usePointStyle:true, pointStyle:'circle', font:{ size:isMobile?10:12, family:'Outfit' }, padding:15, boxWidth:8 }
         },
         title: {
-          display: true, text: titles[metric] || 'Gráfico', color:'#e0e4f0',
-          font:{ size:isMobile?15:18, weight:'700', family:'Outfit' }, padding:{ bottom:20 }
+          display: true, text: titles[metric] || 'Gráfico', color: textBodyColor,
+          align: isMobile ? 'start' : 'center',
+          font:{ size:isMobile?15:18, weight:'700', family:'Outfit' }, padding:{ bottom:30 }
         },
         tooltip: {
-          backgroundColor: 'rgba(10,14,28,0.95)', titleColor: '#fff', bodyColor: '#c0c8d8',
-          borderColor: '#2a3060', borderWidth: 1, padding: 12, cornerRadius: 10,
+          backgroundColor: tooltipBg, titleColor: textBodyColor, bodyColor: textMuted,
+          borderColor: getVar('--border-color'), borderWidth: 1, padding: 12, cornerRadius: 10,
           callbacks: { label: ctx => ` ${ctx.dataset.label}: S/ ${Math.abs(ctx.parsed.y).toFixed(2)}` }
         },
         datalabels: {
@@ -1478,23 +1683,28 @@ function renderCharts() {
             return Math.abs(ctx.dataset.data[ctx.dataIndex]) > 0;
           },
           anchor: 'end',
-          align: 'top',
+          align: 'end',
           offset: 4,
-          color: '#ddeeff',
-          font: { size: isMobile ? 9 : 10, weight: '600', family: 'Outfit' },
+          color: currentTheme === 'light' ? '#1e293b' : '#ffffff',
+          backgroundColor: currentTheme === 'light' ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.5)',
+          borderColor: currentTheme === 'light' ? 'rgba(0,0,0,0.08)' : 'transparent',
+          borderWidth: currentTheme === 'light' ? 1 : 0,
+          borderRadius: 4,
+          padding: 3,
+          font: { size: isMobile ? 10 : 12, weight: '700', family: 'Outfit' },
           formatter: v => 'S/' + Math.abs(v).toFixed(0),
-          rotation: isMobile ? -90 : -45
+          rotation: -45
         }
       },
       scales: {
         y: {
-          beginAtZero: true, grid: { color:'rgba(42,47,80,0.4)', drawBorder:false },
+          beginAtZero: true, grid: { color: getVar('--border-color-light').substring(0, 7) + '40', drawBorder:false },
           ticks: { 
-            color:'#8b92a8', font:{ size:isMobile?9:11, family:'Outfit' }, 
+            color: textMuted, font:{ size:isMobile?9:11, family:'Outfit' }, 
             callback: v => 'S/'+(Math.abs(v)>=1000?(Math.abs(v)/1000).toFixed(1)+'k':Math.abs(v)) 
           }
         },
-        x: { grid:{ display:false }, ticks:{ color:'#8b92a8', font:{ size:isMobile?10:11, family:'Outfit' } } }
+        x: { grid:{ display:false }, ticks:{ color: textMuted, font:{ size:isMobile?10:11, family:'Outfit' } } }
       },
       interaction: { mode:'index', intersect:false },
       animation: { duration:1000, easing:'easeOutQuart' }
