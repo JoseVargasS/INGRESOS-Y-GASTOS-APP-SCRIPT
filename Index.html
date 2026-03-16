@@ -407,10 +407,9 @@
               <label>Monto <span class="label-hint">(puedes hacer operaciones: + - * /)</span></label>
               <div class="input-with-icon">
                   <span class="currency-symbol">S/</span>
-                  <input type="text" id="inputAmount" placeholder="Ej: 100+50+25" autocomplete="off" inputmode="decimal" required>
+                  <input type="text" id="inputAmount" placeholder="Ej: (100+50)*25-10/2" autocomplete="off" inputmode="none" required>
                   <span id="mathPreviewResult"></span>
               </div>
-              <div class="tips"><i class="fa-regular fa-lightbulb"></i> Tips: "100+50+25" para sumar, "200*2" para multiplicar</div>
             </div>
 
             <div class="form-group">
@@ -441,6 +440,34 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- Custom Mobile Keyboard -->
+    <div id="custom-calc-keyboard" class="custom-keyboard hidden">
+      <button type="button" class="kb-btn" onclick="addMathSymbol('(')">(</button>
+      <button type="button" class="kb-btn" onclick="addMathSymbol(')')">)</button>
+      <button type="button" class="kb-btn kb-btn-clear" onclick="clearAmount()">C</button>
+      <button type="button" class="kb-btn kb-btn-op" onclick="addMathSymbol('/')">÷</button>
+      
+      <button type="button" class="kb-btn" onclick="addMathSymbol('7')">7</button>
+      <button type="button" class="kb-btn" onclick="addMathSymbol('8')">8</button>
+      <button type="button" class="kb-btn" onclick="addMathSymbol('9')">9</button>
+      <button type="button" class="kb-btn kb-btn-op" onclick="addMathSymbol('*')">×</button>
+      
+      <button type="button" class="kb-btn" onclick="addMathSymbol('4')">4</button>
+      <button type="button" class="kb-btn" onclick="addMathSymbol('5')">5</button>
+      <button type="button" class="kb-btn" onclick="addMathSymbol('6')">6</button>
+      <button type="button" class="kb-btn kb-btn-op" onclick="addMathSymbol('-')">-</button>
+      
+      <button type="button" class="kb-btn" onclick="addMathSymbol('1')">1</button>
+      <button type="button" class="kb-btn" onclick="addMathSymbol('2')">2</button>
+      <button type="button" class="kb-btn" onclick="addMathSymbol('3')">3</button>
+      <button type="button" class="kb-btn kb-btn-op" onclick="addMathSymbol('+')">+</button>
+      
+      <button type="button" class="kb-btn" onclick="addMathSymbol('0')">0</button>
+      <button type="button" class="kb-btn" onclick="addMathSymbol('.')">.</button>
+      <button type="button" class="kb-btn kb-btn-op" onclick="deleteLastChar()"><i class="fa-solid fa-delete-left"></i></button>
+      <button type="button" class="kb-btn kb-btn-action" onclick="blurAmount()">Hecho</button>
     </div>
 
     <?!= include('Scripts'); ?>

@@ -1897,6 +1897,15 @@ table tbody tr {
   pointer-events: none;
 }
 
+@media (max-width: 768px) {
+  body.keyboard-active .modal-overlay {
+    align-items: flex-start;
+    padding-top: 20px;
+    padding-bottom: 300px; /* Asegura espacio para scroll si es necesario */
+    overflow-y: auto;
+  }
+}
+
 .modal {
   background: linear-gradient(180deg, var(--bg-card) 0%, var(--bg-dark) 100%);
   width: 480px;
@@ -2060,20 +2069,6 @@ table tbody tr {
   font-size: 16px;
   pointer-events: none;
   display: none;
-}
-
-.tips {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-top: 8px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.tips i {
-  color: var(--accent-yellow);
-  font-size: 11px;
 }
 
 /* Modal Actions */
@@ -2682,6 +2677,81 @@ table tbody tr {
   
   table th {
     font-size: 13px !important;
+  }
+
+  /* ============================================
+     CUSTOM CALC KEYBOARD (MOBILE ONLY)
+     ============================================ */
+  .custom-keyboard {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background: var(--bg-card);
+    border-top: 1.5px solid var(--border-color);
+    padding: 12px 10px env(safe-area-inset-bottom);
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    z-index: 2000;
+    box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.6);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+  }
+
+  .custom-keyboard.hidden {
+    transform: translateY(100%);
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .kb-btn {
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    padding: 9px 0;
+    border-radius: 9px;
+    font-size: 21px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--transition-fast);
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .kb-btn:active {
+    background: var(--bg-card-hover);
+    transform: scale(0.95);
+    border-color: var(--accent-blue);
+  }
+
+  .kb-btn-op {
+    background: rgba(68, 138, 255, 0.1);
+    color: var(--accent-blue);
+    border-color: rgba(89, 148, 243, 0.281);
+  }
+
+  .kb-btn-action {
+    background: linear-gradient(135deg, var(--accent-green) 0%, var(--accent-green-dark) 100%);
+    color: var(--bg-dark);
+    border: none;
+  }
+
+  .kb-btn-clear {
+    color: var(--accent-red);
+    background: rgba(255, 82, 82, 0.1);
+    border-color: rgba(255, 82, 82, 0.2);
+  }
+
+  /* Ocultar en Escritorio */
+  @media (min-width: 769px) {
+    .custom-keyboard {
+      display: none !important;
+    }
   }
 }
 </style>

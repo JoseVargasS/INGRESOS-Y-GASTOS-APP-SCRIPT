@@ -409,6 +409,63 @@ function setupEventListeners() {
       });
     }
   });
+
+  // ============================================
+  // CUSTOM KEYBOARD LOGIC (MOBILE)
+  // ============================================
+  const customKeyboard = document.getElementById('custom-calc-keyboard');
+
+  inputAmount.addEventListener('focus', () => {
+    if (window.innerWidth <= 768) {
+      document.body.classList.add('keyboard-active');
+      customKeyboard.classList.remove('hidden');
+      
+      // Integración con Back Button (History API)
+      if (window.history.state?.keyboardOpen !== true) {
+        window.history.pushState({ keyboardOpen: true }, '');
+      }
+      
+      // Asegurar que el input sea visible después de que el teclado aparezca
+      setTimeout(() => {
+        inputAmount.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 300);
+    }
+  });
+
+  inputAmount.addEventListener('blur', () => {
+    // Pequeño delay para dejar que terminen las transiciones
+    setTimeout(() => {
+      document.body.classList.remove('keyboard-active');
+      customKeyboard.classList.add('hidden');
+      
+      // Si el blur fue manual (Hecho o clic fuera) y el estado sigue siendo de teclado abierto, limpiar historial
+      if (window.history.state?.keyboardOpen === true) {
+        window.history.back();
+      }
+    }, 150);
+  });
+
+  // Manejar el botón de atrás del sistema/navegador
+  window.addEventListener('popstate', (event) => {
+    const isKeyboardOpen = !customKeyboard.classList.contains('hidden');
+    if (isKeyboardOpen && (!event.state || event.state.keyboardOpen !== true)) {
+      inputAmount.blur(); // El blur disparará el ocultamiento y la limpieza de clases
+    }
+  });
+
+  // Prevenir que el input pierda el foco al tocar los botones del teclado custom
+  customKeyboard.addEventListener('mousedown', (e) => {
+    if (e.target.closest('.kb-btn')) {
+      e.preventDefault(); // Mantiene el foco en el inputAmount
+    }
+  });
+  
+  // Soporte para touch
+  customKeyboard.addEventListener('touchstart', (e) => {
+    if (e.target.closest('.kb-btn')) {
+      // No preventDefault aquí para permitir el click, pero el mousedown se encargará del foco
+    }
+  }, {passive: true});
 }
 
 // ============================================
@@ -573,6 +630,51 @@ function changeMonth(delta) {
   }
   updateHeaderDate();
   loadTransactions();
+}
+
+function addMathSymbol(symbol) {
+  const input = document.getElementById('inputAmount');
+  const start = input.selectionStart;
+  const end = input.selectionEnd;
+  const text = input.value;
+  
+  // Insert symbol at cursor position
+  input.value = text.substring(0, start) + symbol + text.substring(end);
+  
+  // Move cursor to after the inserted symbol
+  const newPos = start + symbol.length;
+  input.setSelectionRange(newPos, newPos);
+  
+  // Trigger input event for preview
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function clearAmount() {
+  const input = document.getElementById('inputAmount');
+  input.value = '';
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function deleteLastChar() {
+  const input = document.getElementById('inputAmount');
+  const start = input.selectionStart;
+  const end = input.selectionEnd;
+  const text = input.value;
+  
+  if (start === end) {
+    if (start > 0) {
+      input.value = text.substring(0, start - 1) + text.substring(end);
+      input.setSelectionRange(start - 1, start - 1);
+    }
+  } else {
+    input.value = text.substring(0, start) + text.substring(end);
+    input.setSelectionRange(start, start);
+  }
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function blurAmount() {
+  document.getElementById('inputAmount').blur();
 }
 
 function calculateExpression(expression) {
