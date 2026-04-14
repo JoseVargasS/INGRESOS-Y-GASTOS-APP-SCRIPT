@@ -62,6 +62,13 @@ function formatDateForSheet(dateObj) {
  * @returns {Array} Lista de transacciones
  */
 function getTransactions(month, year) {
+  // Asegurar que el mes existe en el resumen antes de obtener datos
+  try {
+    ensureMonthlyRowExists(month, year);
+  } catch (e) {
+    console.error("Error al asegurar mes: " + e.toString());
+  }
+
   var sheet = getSheetByName('INGRESOS Y GASTOS');
   if (!sheet) {
     throw new Error("No se encontró la hoja 'INGRESOS Y GASTOS'");
@@ -173,11 +180,18 @@ function insertRecordChronologically(sheet, dateObj, amount, detail, type) {
  * @param {Object} transactionData - Datos de la transacción
  */
 function addTransaction(transactionData) {
-  var sheet = getSheetByName('INGRESOS Y GASTOS');
-  if (!sheet) throw new Error("No se encontró la hoja 'INGRESOS Y GASTOS'");
-  
   var parts = transactionData.date.split('-');
   var dateObj = new Date(parts[0], parts[1] - 1, parts[2]);
+
+  // Asegurar que el mes existe en el resumen
+  try {
+    ensureMonthlyRowExists(dateObj.getMonth(), dateObj.getFullYear());
+  } catch (e) {
+    console.error("Error al asegurar mes al agregar: " + e.toString());
+  }
+
+  var sheet = getSheetByName('INGRESOS Y GASTOS');
+  if (!sheet) throw new Error("No se encontró la hoja 'INGRESOS Y GASTOS'");
   
   insertRecordChronologically(sheet, dateObj, transactionData.amount, transactionData.detail, transactionData.type);
   
@@ -191,11 +205,17 @@ function addTransaction(transactionData) {
  * @param {number} year - Año actual
  */
 function addTransactionOptimized(transactionData, month, year) {
-  var sheet = getSheetByName('INGRESOS Y GASTOS');
-  if (!sheet) throw new Error("No se encontró la hoja 'INGRESOS Y GASTOS'");
-  
   var parts = transactionData.date.split('-');
   var dateObj = new Date(parts[0], parts[1] - 1, parts[2]);
+
+  // Asegurar que el mes existe en el resumen
+  try {
+    ensureMonthlyRowExists(dateObj.getMonth(), dateObj.getFullYear());
+  } catch (e) {
+    console.error("Error al asegurar mes en optimizado: " + e.toString());
+  }
+
+  var sheet = getSheetByName('INGRESOS Y GASTOS');
   
   var targetRow = insertRecordChronologically(sheet, dateObj, transactionData.amount, transactionData.detail, transactionData.type);
   
@@ -399,6 +419,88 @@ function getMonthlySummaryData() {
 }
 
 /**
+ * Asegura que exista una fila para el mes/año en RESUMEN POR MES
+ * @param {number} month - Mes (0-11)
+ * @param {number} year - Año
+ */
+function ensureMonthlyRowExists(month, year) {
+  var sheet = getSheetByName('RESUMEN POR MES');
+  if (!sheet) return;
+
+  var data = sheet.getDataRange().getValues();
+  var headerRowIndex = -1;
+  
+  // Buscar fila de encabezado
+  for (var i = 0; i < data.length; i++) {
+    var cell = String(data[i][0]).toUpperCase().trim();
+    if (cell.indexOf("MES") > -1) {
+      headerRowIndex = i;
+      break;
+    }
+  }
+  if (headerRowIndex === -1) headerRowIndex = 0; // Fallback al inicio si no se encuentra
+
+  var exists = false;
+  var lastDataRow = headerRowIndex + 1;
+  var insertIndex = -1;
+
+  for (var i = headerRowIndex + 1; i < data.length; i++) {
+    var val = data[i][0];
+    if (Object.prototype.toString.call(val) === '[object Date]') {
+      if (val.getMonth() === month && val.getFullYear() === year) {
+        exists = true;
+        break;
+      }
+      
+      // Encontrar posición cronológica
+      var rowDate = new Date(val.getFullYear(), val.getMonth(), 1);
+      var targetDate = new Date(year, month, 1);
+      
+      if (rowDate.getTime() < targetDate.getTime()) {
+        lastDataRow = i + 1;
+      } else if (insertIndex === -1) {
+        insertIndex = i + 1;
+      }
+    } else if (val) {
+      lastDataRow = i + 1;
+    }
+  }
+
+  if (!exists) {
+    if (insertIndex === -1) {
+      insertIndex = lastDataRow + 1;
+      sheet.insertRowAfter(lastDataRow);
+    } else {
+      sheet.insertRowBefore(insertIndex);
+    }
+    
+    // Establecer la fecha el primer día del mes
+    var newDate = new Date(year, month, 1);
+    sheet.getRange(insertIndex, 1).setValue(newDate);
+    sheet.getRange(insertIndex, 2).setValue(0); // Ingreso frecuente inicial 0
+    
+    // Establecer fórmulas dinámicas basadas en la fecha de la Columna A
+    var r = insertIndex;
+    var formulas = [[
+      "=SUMIFS('INGRESOS Y GASTOS'!$B:$B, 'INGRESOS Y GASTOS'!$A:$A, \">=\"&$A" + r + ", 'INGRESOS Y GASTOS'!$A:$A, \"<=\"&EOMONTH($A" + r + ", 0), 'INGRESOS Y GASTOS'!$D:$D, \"INGRESO NO FRECUENTE\")", // C (Ing. No Frec)
+      "=B" + r + "+C" + r, // D (Total Ing)
+      "=SUMIFS('INGRESOS Y GASTOS'!$B:$B, 'INGRESOS Y GASTOS'!$A:$A, \">=\"&$A" + r + ", 'INGRESOS Y GASTOS'!$A:$A, \"<=\"&EOMONTH($A" + r + ", 0), 'INGRESOS Y GASTOS'!$D:$D, \"GASTO FRECUENTE\")", // E (Gasto Frec)
+      "=SUMIFS('INGRESOS Y GASTOS'!$B:$B, 'INGRESOS Y GASTOS'!$A:$A, \">=\"&$A" + r + ", 'INGRESOS Y GASTOS'!$A:$A, \"<=\"&EOMONTH($A" + r + ", 0), 'INGRESOS Y GASTOS'!$D:$D, \"GASTO NO FRECUENTE\")", // F (Gasto No Frec)
+      "=E" + r + "+F" + r, // G (Total Gastos)
+      "=D" + r + "+G" + r, // H (Neto Mensual)
+      "=H" + r + "-B" + r  // I (Total sin Ing Frec)
+    ]];
+    sheet.getRange(r, 3, 1, 7).setFormulas(formulas);
+    
+    // Copiar solo el formato de la fila anterior (si existe)
+    var templateRow = insertIndex > (headerRowIndex + 1) ? insertIndex - 1 : insertIndex + 1;
+    if (templateRow <= sheet.getLastRow() && templateRow > headerRowIndex + 1) {
+        sheet.getRange(templateRow, 1, 1, 9).copyTo(sheet.getRange(insertIndex, 1, 1, 9), SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
+    }
+  }
+}
+
+/**
  * Alias para getMonthlySummaryData (compatibilidad con gráficos)
  */
 function getChartData() {
@@ -441,41 +543,62 @@ function getMonthStats(month, year) {
 }
 
 /**
- * Busca transacciones por texto
- * @param {string} searchText - Texto a buscar
- * @param {number} limit - Límite de resultados
+ * Realiza una búsqueda avanzada de transacciones
+ * @param {Object} filters - Filtros { text, minAmount, maxAmount, startDate, endDate }
+ * @returns {Array} Resultados
  */
-function searchTransactions(searchText, limit) {
-  limit = limit || 50;
+function getAdvancedTransactions(filters) {
   var sheet = getSheetByName('INGRESOS Y GASTOS');
   if (!sheet) return [];
   
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return [];
   
-  var range = sheet.getRange(2, 1, lastRow - 1, 4);
-  var data = range.getValues();
-  
+  var data = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
   var results = [];
-  var searchLower = searchText.toLowerCase();
   
-  for (var i = 0; i < data.length && results.length < limit; i++) {
+  var text = (filters.text || "").toLowerCase().trim();
+  var min = (filters.minAmount !== undefined && filters.minAmount !== "") ? parseFloat(filters.minAmount) : null;
+  var max = (filters.maxAmount !== undefined && filters.maxAmount !== "") ? parseFloat(filters.maxAmount) : null;
+  
+  // Convertir fechas de string a Date si existen
+  var start = filters.startDate ? new Date(filters.startDate + "T00:00:00") : null;
+  var end = filters.endDate ? new Date(filters.endDate + "T23:59:59") : null;
+  
+  for (var i = 0; i < data.length; i++) {
     var row = data[i];
-    var detail = String(row[2] || '').toLowerCase();
-    var type = String(row[3] || '').toLowerCase();
+    var rowDate = row[0];
+    var rowAmount = Math.abs(parseFloat(row[1]) || 0);
+    var rowDetail = String(row[2] || "").toLowerCase();
+    var rowType = String(row[3] || "").toLowerCase();
     
-    if (detail.indexOf(searchLower) > -1 || type.indexOf(searchLower) > -1) {
-      results.push({
-        rowId: i + 2,
-        date: formatDateForSheet(row[0]),
-        amount: row[1],
-        detail: row[2],
-        type: row[3]
-      });
+    // 1. Filtro de Texto (en detalle o tipo)
+    if (text && rowDetail.indexOf(text) === -1 && rowType.indexOf(text) === -1) continue;
+    
+    // 2. Filtro de Monto (sobre valor absoluto para encontrar ingresos y gastos)
+    if (min !== null && rowAmount < min) continue;
+    if (max !== null && rowAmount > max) continue;
+    
+    // 3. Filtro de Fecha
+    if (start || end) {
+      var d = (rowDate instanceof Date) ? rowDate : new Date(rowDate);
+      if (isNaN(d.getTime())) continue;
+      
+      if (start && d < start) continue;
+      if (end && d > end) continue;
     }
+    
+    results.push({
+      rowId: i + 2, // Compensar encabezado y 0-index
+      date: formatDateForSheet(row[0]),
+      amount: row[1],
+      detail: row[2],
+      type: row[3]
+    });
   }
   
-  return results;
+  // Retornar limitados a 150 para no saturar el DOM, ordenados del más reciente al más antiguo
+  return results.reverse().slice(0, 150);
 }
 
 /**

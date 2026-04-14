@@ -12,6 +12,8 @@ var summaries = [];
 var currentSort = { col: 'date', order: 'desc' };
 var deleteRowId = null;
 var myChart = null;
+var isSearchActive = false;
+var searchResults = [];
 
 var lastDeletedTransaction = null;
 var undoTimeout = null;
@@ -61,6 +63,62 @@ const goToCurrentMonthBtnMobile = document.getElementById('goToCurrentMonthBtnMo
 const sidebarToggle = document.getElementById('sidebarToggle');
 const appSidebar = document.getElementById('appSidebar');
 const sidebarOverlay = document.getElementById('sidebarOverlay');
+
+// ============================================
+// SKELETON LOADERS
+// ============================================
+function showTableSkeleton(rows = 6) {
+  const tbody = document.getElementById('transactionsTableBody');
+  if (!tbody) return;
+  
+  let html = '';
+  for (let i = 0; i < rows; i++) {
+    html += `
+      <tr class="skeleton-tr">
+        <td><div class="shimmer skeleton-row"></div></td>
+        <td><div class="shimmer skeleton-row"></div></td>
+        <td><div class="shimmer skeleton-row"></div></td>
+        <td><div class="shimmer skeleton-row"></div></td>
+        <td><div class="shimmer skeleton-row" style="width: 60px; margin: 0 auto;"></div></td>
+      </tr>
+    `;
+  }
+  tbody.innerHTML = html;
+  
+  // Also skeletonize stats
+  const statIds = ['statFreqIncome', 'statNoFreqIncome', 'statFreqExpense', 'statNoFreqExpense', 'statTotalExpense', 'statBalance'];
+  statIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = '<div class="shimmer skeleton-text" style="width: 100px; margin-top: 5px;"></div>';
+  });
+}
+
+function showSummarySkeleton() {
+  const kpiIds = ['kpiTotalIncome', 'kpiTotalExpense', 'kpiNetBalance', 'kpiSavingsRate'];
+  kpiIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = '<div class="shimmer skeleton-text" style="width: 80px; margin-top: 10px; height: 18px;"></div>';
+  });
+  
+  const tbody = document.getElementById('summaryTableBody');
+  if (tbody) {
+    let html = '';
+    for (let i = 0; i < 4; i++) {
+      html += `
+        <tr>
+          <td><div class="shimmer skeleton-row"></div></td>
+          <td><div class="shimmer skeleton-row"></div></td>
+          <td><div class="shimmer skeleton-row"></div></td>
+          <td><div class="shimmer skeleton-row"></div></td>
+          <td><div class="shimmer skeleton-row"></div></td>
+          <td><div class="shimmer skeleton-row"></div></td>
+          <td><div class="shimmer skeleton-row"></div></td>
+        </tr>
+      `;
+    }
+    tbody.innerHTML = html;
+  }
+}
 
 // ============================================
 // INICIALIZACIÓN
@@ -138,8 +196,14 @@ function setupEventListeners() {
   });
 
   // Navigation
-  prevMonthBtn.addEventListener('click', () => changeMonth(-1));
-  nextMonthBtn.addEventListener('click', () => changeMonth(1));
+  prevMonthBtn.addEventListener('click', () => {
+    if (isSearchActive) exitSearchMode();
+    changeMonth(-1);
+  });
+  nextMonthBtn.addEventListener('click', () => {
+    if (isSearchActive) exitSearchMode();
+    changeMonth(1);
+  });
   
   goToCurrentMonthBtn.addEventListener('click', () => {
     const now = new Date();
@@ -172,6 +236,7 @@ function setupEventListeners() {
   
   if (goToCurrentMonthBtnMobile) {
     goToCurrentMonthBtnMobile.addEventListener('click', () => {
+      if (isSearchActive) exitSearchMode();
       const now = new Date();
       currentYear = now.getFullYear();
       currentMonth = now.getMonth();
@@ -392,11 +457,53 @@ function setupEventListeners() {
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       addModal.classList.add('hidden');
+      freqIncomeModal.classList.add('hidden');
       deleteModal.classList.add('hidden');
+      document.getElementById('searchModal').classList.add('hidden');
       appSidebar.classList.remove('open');
       sidebarOverlay.classList.add('hidden');
     }
   });
+
+  // Search Logic Listeners
+  const btnOpenSearch = document.getElementById('btnOpenSearch');
+  const searchModal = document.getElementById('searchModal');
+  const closeSearchModal = document.getElementById('closeSearchModal');
+  const searchForm = document.getElementById('searchForm');
+  const btnClearSearch = document.getElementById('btnClearSearch');
+  const btnExitSearch = document.getElementById('btnExitSearch');
+
+  if (btnOpenSearch) btnOpenSearch.onclick = () => searchModal.classList.remove('hidden');
+  if (closeSearchModal) {
+    closeSearchModal.onclick = () => searchModal.classList.add('hidden');
+  }
+  
+  if (btnClearSearch) {
+    btnClearSearch.onclick = () => {
+      searchForm.reset();
+    };
+  }
+
+  if (searchForm) {
+    searchForm.onsubmit = (e) => {
+      e.preventDefault();
+      executeAdvancedSearch();
+    };
+  }
+
+  if (btnExitSearch) {
+    btnExitSearch.onclick = () => {
+      exitSearchMode();
+    };
+  }
+
+  // Close modals on overlay click
+  window.onclick = (event) => {
+    if (event.target === addModal) addModal.classList.add('hidden');
+    if (event.target === freqIncomeModal) freqIncomeModal.classList.add('hidden');
+    if (event.target === deleteModal) deleteModal.classList.add('hidden');
+    if (event.target === searchModal) searchModal.classList.add('hidden');
+  };
   
   // Close dropdowns on outside click
   document.addEventListener('click', (e) => {
@@ -747,18 +854,82 @@ function sortAndRender() {
 }
 
 // ============================================
+// SEARCH LOGIC
+// ============================================
+function executeAdvancedSearch() {
+  const filters = {
+    text: document.getElementById('searchTextInput').value,
+    minAmount: document.getElementById('searchMinAmount').value,
+    maxAmount: document.getElementById('searchMaxAmount').value,
+    startDate: document.getElementById('searchStartDate').value,
+    endDate: document.getElementById('searchEndDate').value
+  };
+
+  // Validar que al menos un filtro esté presente
+  if (!filters.text && !filters.minAmount && !filters.maxAmount && !filters.startDate && !filters.endDate) {
+    showToast('Por favor ingresa al menos un criterio de búsqueda', 'info');
+    return;
+  }
+
+  document.getElementById('searchModal').classList.add('hidden');
+  showTableSkeleton();
+  
+  // Ocultar sección de KPIs durante búsqueda global (no tienen sentido mes a mes)
+  document.querySelector('.header-stats-grid').style.display = 'none';
+  document.getElementById('searchActiveBanner').classList.remove('hidden');
+  
+  isSearchActive = true;
+
+  google.script.run
+    .withSuccessHandler((results) => {
+      searchResults = results;
+      renderTransactions(results, false);
+      showToast(`Se encontraron ${results.length} coincidencias`, 'success');
+      
+      // Cambiar título
+      document.getElementById('pageTitle').innerText = 'Resultados de Búsqueda';
+      document.getElementById('pageSubtitle').innerText = 'Filtros aplicados';
+    })
+    .withFailureHandler((err) => {
+      showToast('Error en búsqueda: ' + err.message, 'error');
+      exitSearchMode();
+    })
+    .getAdvancedTransactions(filters);
+}
+
+function updatePageTitles() {
+  const activeTabBtn = document.querySelector('.nav-item.active');
+  const activeTab = activeTabBtn ? activeTabBtn.getAttribute('data-tab') : 'expenses';
+  const titles = {
+    'expenses': 'Tabla de Gastos',
+    'summary': 'Resumen Anual',
+    'charts': 'Gráficos Anuales'
+  };
+  document.getElementById('pageTitle').innerText = titles[activeTab] || 'Tabla de Gastos';
+  updateHeaderDate();
+}
+
+function exitSearchMode() {
+  isSearchActive = false;
+  document.getElementById('searchActiveBanner').classList.add('hidden');
+  document.querySelector('.header-stats-grid').style.display = 'grid';
+  
+  // Restaurar títulos
+  updatePageTitles();
+  
+  // Usar el caché existente para restaurar la vista al instante sin llamar al servidor
+  if (transactionCache && transactionCache.length > 0) {
+    renderTransactions(transactionCache, false);
+  } else {
+    loadTransactions();
+  }
+}
+
+// ============================================
 // TRANSACTIONS
 // ============================================
 function loadTransactions() {
-  const tbody = document.getElementById('transactionsTableBody');
-  tbody.innerHTML = `
-    <tr>
-      <td colspan="5" class="loading-text">
-        <div class="loading-spinner"></div>
-        Cargando datos...
-      </td>
-    </tr>
-  `;
+  showTableSkeleton();
 
   google.script.run
     .withSuccessHandler(renderTransactions)
@@ -809,6 +980,8 @@ function renderTransactions(data, updateCache = true) {
     return;
   }
 
+  const fragment = document.createDocumentFragment();
+
   filteredData.forEach(tx => {
     const amt = Number(tx.amount);
     if (amt > 0) {
@@ -822,14 +995,15 @@ function renderTransactions(data, updateCache = true) {
     }
     
     const row = document.createElement('tr');
+    row.className = 'fade-in';
     
     // CORRECCIÓN: Sombreado para todos los tipos
     if (tx.type === 'GASTO FRECUENTE') {
-      row.className = 'row-gasto-frecuente';
+      row.classList.add('row-gasto-frecuente');
     } else if (tx.type === 'INGRESO FRECUENTE') {
-      row.className = 'row-ingreso-frecuente';
+      row.classList.add('row-ingreso-frecuente');
     } else if (tx.type === 'INGRESO NO FRECUENTE') {
-      row.className = 'row-ingreso-no-frecuente';
+      row.classList.add('row-ingreso-no-frecuente');
     }
     
     let amountClass = '';
@@ -894,8 +1068,10 @@ function renderTransactions(data, updateCache = true) {
       row.addEventListener('dragend', dropLift);
     }
     
-    tbody.appendChild(row);
+    fragment.appendChild(row);
   });
+  
+  tbody.appendChild(fragment);
   
   updateHeaderStats(totalIncome, totalExpense, freqExpense, noFreqExpense, noFreqIncome);
   setTimeout(checkDetailOverflows, 0);
@@ -1293,6 +1469,8 @@ function handleFormSubmit(e) {
 // SUMMARY
 // ============================================
 function loadSummary() {
+  showSummarySkeleton();
+  
   google.script.run
     .withSuccessHandler((data) => {
       summaries = data;

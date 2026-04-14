@@ -122,6 +122,10 @@
               <span class="theme-pill-icon sun-icon"><i class="fa-solid fa-sun"></i></span>
               <span class="theme-pill-icon moon-icon"><i class="fa-solid fa-moon"></i></span>
             </div>
+            
+            <button class="icon-btn-header" id="btnOpenSearch" title="Búsqueda Avanzada">
+              <i class="fa-solid fa-magnifying-glass"></i>
+            </button>
           </div>
         </header>
 
@@ -204,6 +208,18 @@
               </div>
             </div>
           </div>
+
+          <!-- Search Results Banner -->
+          <div id="searchActiveBanner" class="search-banner hidden">
+            <div class="search-banner-content">
+              <i class="fa-solid fa-magnifying-glass"></i>
+              <span>Mostrando resultados de búsqueda avanzada</span>
+            </div>
+            <button class="btn-exit-search" id="btnExitSearch">
+              <i class="fa-solid fa-times"></i> Salir
+            </button>
+          </div>
+
           <div class="table-container mt-4">
             <table>
               <thead>
@@ -468,6 +484,59 @@
       <button type="button" class="kb-btn" onclick="addMathSymbol('.')">.</button>
       <button type="button" class="kb-btn kb-btn-op" onclick="deleteLastChar()"><i class="fa-solid fa-delete-left"></i></button>
       <button type="button" class="kb-btn kb-btn-action" onclick="blurAmount()">Hecho</button>
+    </div>
+
+    <!-- Advanced Search Modal -->
+    <div id="searchModal" class="modal-overlay hidden">
+      <div class="modal">
+        <div class="modal-header">
+          <h3><i class="fa-solid fa-magnifying-glass-chart"></i> Búsqueda Avanzada</h3>
+          <button class="close-modal" id="closeSearchModal"><i class="fa-solid fa-times"></i></button>
+        </div>
+        <div class="modal-body">
+          <form id="searchForm">
+            <div class="form-group">
+              <label>Descripción / Detalle</label>
+              <div class="input-with-icon no-prefix">
+                <input type="text" id="searchTextInput" placeholder="Ej: supermercado, servicios...">
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label>Monto Mínimo</label>
+                <div class="input-with-icon">
+                  <span class="currency-symbol">S/</span>
+                  <input type="number" id="searchMinAmount" step="0.01">
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Monto Máximo</label>
+                <div class="input-with-icon">
+                  <span class="currency-symbol">S/</span>
+                  <input type="number" id="searchMaxAmount" step="0.01">
+                </div>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label>Desde (Fecha)</label>
+                <input type="date" id="searchStartDate">
+              </div>
+              <div class="form-group">
+                <label>Hasta (Fecha)</label>
+                <input type="date" id="searchEndDate">
+              </div>
+            </div>
+
+            <div class="modal-actions">
+              <button type="button" class="btn-cancel" id="btnClearSearch"><i class="fa-solid fa-eraser"></i> Limpiar</button>
+              <button type="submit" class="btn-save" id="btnSubmitSearch"><i class="fa-solid fa-search"></i> Buscar Ahora</button>
+            </div>
+          </form>
+        </div>
+      </div>
     </div>
 
     <?!= include('Scripts'); ?>
