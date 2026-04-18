@@ -6,11 +6,11 @@
   <!-- Google Fonts -->
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   
-  <!-- ✅ ICONO DE LA APP CORREGIDO (Thumbnail para estabilidad) -->
-  <link rel="icon" type="image/png" href="https://drive.google.com/thumbnail?id=1OCe94doF-xb67RbXdG1d8EzPSM6NBGyS&sz=w192">
-  <link rel="apple-touch-icon" sizes="192x192" href="https://drive.google.com/thumbnail?id=1OCe94doF-xb67RbXdG1d8EzPSM6NBGyS&sz=w192">
-  <link rel="apple-touch-icon" sizes="180x180" href="https://drive.google.com/thumbnail?id=1OCe94doF-xb67RbXdG1d8EzPSM6NBGyS&sz=w180">
-  <link rel="shortcut icon" href="https://drive.google.com/thumbnail?id=1OCe94doF-xb67RbXdG1d8EzPSM6NBGyS&sz=w128">
+  <!-- ✅ ICONO DE LA APP -->
+  <link rel="icon" type="image/png" href="icon.png">
+  <link rel="apple-touch-icon" sizes="192x192" href="icon.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="icon.png">
+  <link rel="shortcut icon" href="icon.png">
   
   <!-- Meta tags para PWA -->
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -38,7 +38,7 @@
       <aside class="sidebar" id="appSidebar">
         <div class="logo-area">
           <div class="logo-icon">
-             <img src="https://drive.google.com/thumbnail?id=1OCe94doF-xb67RbXdG1d8EzPSM6NBGyS&sz=w500" alt="Logo">
+             <i class="fa-solid fa-sack-dollar"></i>
           </div>
           <h1>Bucks Manager</h1>
           <p>Control de gastos</p>
@@ -49,7 +49,7 @@
           <!-- Custom Year Dropdown -->
           <div class="custom-dropdown year-custom-dropdown" id="yearDropdownWrapper">
               <div class="dropdown-selected year-head" id="yearSelectedHead">
-                  <span id="yearSelectedText">2026</span>
+                  <span id="yearSelectedText"></span>
                   <i class="fa-solid fa-chevron-down"></i>
               </div>
               <div class="dropdown-options hidden" id="yearDropdownOptions">
@@ -57,7 +57,7 @@
               </div>
           </div>
           <!-- Hidden input to maintain ID reference for value reading -->
-          <input type="hidden" id="yearSelect" value="2026">
+          <input type="hidden" id="yearSelect" value="">
 
           
           <div class="month-navigation">
@@ -111,7 +111,7 @@
             <button id="sidebarToggle" class="sidebar-toggle"><i class="fa-solid fa-bars"></i></button>
             <div class="header-title">
                 <h2 id="pageTitle">Tabla de Gastos</h2>
-                <p id="pageSubtitle">Enero 2026</p>
+                <p id="pageSubtitle"></p>
             </div>
           </div>
           <div class="header-right">
@@ -132,11 +132,7 @@
         <!-- Mobile Controls (Visible only on mobile) -->
         <div class="mobile-controls">
             <select id="yearSelectMobile" class="year-select-mobile">
-              <option value="2026">2026</option>
-              <option value="2025">2025</option>
-              <option value="2024">2024</option>
-              <option value="2023">2023</option>
-              <option value="2022">2022</option>
+              <!-- JS Injected -->
             </select>
             
             <div class="month-nav-mobile">
