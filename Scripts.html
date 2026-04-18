@@ -300,11 +300,8 @@ function setupEventListeners() {
       }
       
       const mobileControls = document.querySelector('.mobile-controls');
-      if (tabName === 'charts') {
-        setTimeout(renderCharts, 100);
-        if (mobileControls) mobileControls.classList.add('hidden-nav');
-      } else if (tabName === 'summary') {
-        setTimeout(() => renderSummaryTable(summaries), 100);
+      if (tabName === 'dashboard') {
+        setTimeout(renderDashboard, 100);
         if (mobileControls) mobileControls.classList.add('hidden-nav');
       } else {
         // Mostrar controles de navegación de fecha solo en la pestaña expenses en móvil
@@ -417,11 +414,19 @@ function setupEventListeners() {
     }
   });
 
-  // Chart Filter Listener
-  const chartMetricSelect = document.getElementById('chartMetricSelect');
-  if (chartMetricSelect) {
-    chartMetricSelect.addEventListener('change', () => {
-      renderCharts();
+  // Chart Filter Listener - Dashboard Comparison Chart
+  const dashboardMetricSelect = document.getElementById('dashboardMetricSelect');
+  if (dashboardMetricSelect) {
+    dashboardMetricSelect.addEventListener('change', () => {
+      renderDashboard();
+    });
+  }
+  
+  // Chart Filter Listener - Month-over-Month Comparison
+  const monthOverMonthMetricSelect = document.getElementById('monthOverMonthMetricSelect');
+  if (monthOverMonthMetricSelect) {
+    monthOverMonthMetricSelect.addEventListener('change', () => {
+      renderDashboard();
     });
   }
 
@@ -1152,7 +1157,7 @@ window.toggleDetail = function(rowId, btn) {
 window.addEventListener('resize', () => {
   checkDetailOverflows();
   if (myChart) {
-    setTimeout(renderCharts, 100);
+    setTimeout(renderDashboard, 100);
   }
 });
 
@@ -1490,7 +1495,7 @@ function loadSummary() {
   google.script.run
     .withSuccessHandler((data) => {
       summaries = data;
-      renderSummaryTable(data);
+      renderDashboard();
     })
     .withFailureHandler((error) => {
       showToast('Error al cargar resumen: ' + error.message, 'error');
@@ -1502,10 +1507,12 @@ function loadSummary() {
 var dashPieIncome  = null;
 var dashPieExpense = null;
 var dashTrend      = null;
-var summarySelectedYear = null;
+var dashComparison = null;
+var monthOverMonthChart = null;
+var dashboardSelectedYear = null;
 
-function renderSummaryTable(data) {
-  if (!data || data.length === 0) {
+function renderDashboard() {
+  if (!summaries || summaries.length === 0) {
     document.getElementById('summaryTableBody').innerHTML =
       '<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--text-secondary);">No hay datos</td></tr>';
     return;
@@ -1515,7 +1522,7 @@ function renderSummaryTable(data) {
 
   // ── Extract available years ──────────────────────────────────────────────
   const yearsSet = new Set();
-  data.forEach(s => {
+  summaries.forEach(s => {
     if (!s.monthYear) return;
     const parts = s.monthYear.split(' ');
     if (parts.length >= 2) yearsSet.add(parts[parts.length - 1]);
@@ -1523,26 +1530,26 @@ function renderSummaryTable(data) {
   const years = ['Todos'].concat(Array.from(yearsSet).sort().reverse());
 
   // Default to most-recent year on first render
-  if (!summarySelectedYear || !years.includes(summarySelectedYear)) {
-    summarySelectedYear = years[0];
+  if (!dashboardSelectedYear || !years.includes(dashboardSelectedYear)) {
+    dashboardSelectedYear = years[0];
   }
 
   // ── Year Chips ───────────────────────────────────────────────────────────
-  const chipsEl = document.getElementById('summaryYearChips');
+  const chipsEl = document.getElementById('dashboardYearChips');
   chipsEl.innerHTML = '';
   years.forEach(yr => {
     const btn = document.createElement('button');
-    btn.className = 'year-chip-btn' + (yr === summarySelectedYear ? ' active' : '');
+    btn.className = 'year-chip-btn' + (yr === dashboardSelectedYear ? ' active' : '');
     btn.textContent = yr;
     btn.addEventListener('click', () => {
-      summarySelectedYear = yr;
-      renderSummaryTable(summaries);
+      dashboardSelectedYear = yr;
+      renderDashboard();
     });
     chipsEl.appendChild(btn);
   });
 
   // ── Filter data for selected year ────────────────────────────────────────
-  const yearData = summarySelectedYear === 'Todos' ? data : data.filter(s => s.monthYear && s.monthYear.endsWith(summarySelectedYear));
+  const yearData = dashboardSelectedYear === 'Todos' ? summaries : summaries.filter(s => s.monthYear && s.monthYear.endsWith(dashboardSelectedYear));
 
   // ── KPI Aggregates ───────────────────────────────────────────────────────
   let totFreqInc = 0, totNoFreqInc = 0, totFreqExp = 0, totNoFreqExp = 0;
@@ -1737,6 +1744,225 @@ function renderSummaryTable(data) {
     tbody.appendChild(tr);
   });
   
+  // ── Comparison Chart (Annual) ────────────────────────────────────────────
+  const comparisonCtx = document.getElementById('dashboardComparisonChart');
+  if (comparisonCtx) {
+    if (dashComparison) dashComparison.destroy();
+    
+    const metricSelect = document.getElementById('dashboardMetricSelect');
+    const selectedMetric = metricSelect ? metricSelect.value : 'totalExpense';
+    
+    // Build yearly aggregated data
+    const yearsSet = new Set();
+    const yearlyMetrics = {};
+    
+    summaries.forEach(s => {
+      if (!s.monthYear) return;
+      const parts = s.monthYear.split(' ');
+      if (parts.length < 2) return;
+      const yearStr = parts[parts.length - 1];
+      if (!yearStr.match(/^\d{4}$/)) return;
+      
+      yearsSet.add(yearStr);
+      if (!yearlyMetrics[yearStr]) yearlyMetrics[yearStr] = 0;
+      
+      let val = 0;
+      switch(selectedMetric) {
+        case 'freqExpense': val = Math.abs(Number(s.freqExpense) || 0); break;
+        case 'nonFreqExpense': val = Math.abs(Number(s.nonFreqExpense) || 0); break;
+        case 'totalExpense': val = Math.abs(Number(s.totalExpense) || 0); break;
+        case 'freqIncome': val = Number(s.freqIncome) || 0; break;
+        case 'nonFreqIncome': val = Number(s.nonFreqIncome) || 0; break;
+        case 'totalIncome': val = (Number(s.freqIncome) || 0) + (Number(s.nonFreqIncome) || 0); break;
+        case 'netMonthly': val = Number(s.netMonthly) || 0; break;
+      }
+      yearlyMetrics[yearStr] += val;
+    });
+    
+    const sortedYears = Array.from(yearsSet).sort();
+    const metricLabels = {
+      totalExpense: 'Gasto Total', freqExpense: 'Gasto Frecuente', nonFreqExpense: 'Gasto No Frecuente',
+      totalIncome: 'Ingreso Total', freqIncome: 'Ingreso Frecuente', nonFreqIncome: 'Ingreso No Frecuente',
+      netMonthly: 'Neto Mensual'
+    };
+    
+    const metricColors = {
+      totalExpense: '#ff5252', freqExpense: '#ff3d00', nonFreqExpense: '#ffd740',
+      totalIncome: '#00e676', freqIncome: '#00b0ff', nonFreqIncome: '#e040fb',
+      netMonthly: '#ffd740'
+    };
+    
+    const mainColor = metricColors[selectedMetric] || '#448aff';
+    
+    dashComparison = new Chart(comparisonCtx.getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels: sortedYears,
+        datasets: [{
+          label: metricLabels[selectedMetric] || 'Métrica',
+          data: sortedYears.map(y => yearlyMetrics[y]),
+          backgroundColor: mainColor + 'cc',
+          borderColor: mainColor,
+          borderWidth: 2,
+          borderRadius: 6,
+          barPercentage: 0.6,
+          categoryPercentage: 0.7
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: dashBg === '#f0f4f8' ? 'rgba(255,255,255,0.97)' : 'rgba(14,18,30,0.97)',
+            titleColor: textBodyColor, bodyColor: textMuted,
+            borderColor: getVar('--border-color'), borderWidth: 1,
+            padding: 12, cornerRadius: 10,
+            callbacks: { label: ctx => ` S/ ${ctx.parsed.y.toFixed(2)}` }
+          },
+          datalabels: {
+            display: true,
+            color: mainColor,
+            formatter: (value) => 'S/ ' + (value >= 1000 ? (value/1000).toFixed(1) + 'k' : value.toFixed(0)),
+            font: { weight: 'bold', size: 11, family: 'Outfit' },
+            anchor: 'end', align: 'top'
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            grid: { color: getVar('--border-color-light').substring(0, 7) + '40', drawBorder: false },
+            ticks: {
+              color: textMuted,
+              font: { family: 'Outfit', size: 10 },
+              callback: v => 'S/' + (v >= 1000 ? (v/1000).toFixed(1)+'k' : v)
+            },
+            border: { display: false }
+          },
+          x: {
+            grid: { display: false },
+            ticks: { color: textMuted, font: { family: 'Outfit', size: 10 } },
+            border: { display: false }
+          }
+        },
+        animation: { duration: 700, easing: 'easeOutQuart' }
+      }
+    });
+  }
+  
+  // ── Month-over-Month Comparison Across Years ─────────────────────────────
+  const momCtx = document.getElementById('monthOverMonthChart');
+  if (momCtx) {
+    if (monthOverMonthChart) monthOverMonthChart.destroy();
+    
+    const momMetricSelect = document.getElementById('monthOverMonthMetricSelect');
+    const selectedMomMetric = momMetricSelect ? momMetricSelect.value : 'totalExpense';
+    
+    // Organize data by month and year
+    const monthlyData = {}; // { 'Enero': {2024: val, 2025: val}, 'Febrero': {...} }
+    const yearsSet = new Set();
+    
+    summaries.forEach(s => {
+      if (!s.monthYear) return;
+      const parts = s.monthYear.split(' ');
+      if (parts.length < 2) return;
+      const monthName = parts[0];
+      const yearStr = parts[parts.length - 1];
+      if (!yearStr.match(/^\d{4}$/)) return;
+      
+      yearsSet.add(yearStr);
+      if (!monthlyData[monthName]) monthlyData[monthName] = {};
+      
+      let val = 0;
+      switch(selectedMomMetric) {
+        case 'freqExpense': val = Math.abs(Number(s.freqExpense) || 0); break;
+        case 'nonFreqExpense': val = Math.abs(Number(s.nonFreqExpense) || 0); break;
+        case 'totalExpense': val = Math.abs(Number(s.totalExpense) || 0); break;
+        case 'freqIncome': val = Number(s.freqIncome) || 0; break;
+        case 'nonFreqIncome': val = Number(s.nonFreqIncome) || 0; break;
+        case 'totalIncome': val = (Number(s.freqIncome) || 0) + (Number(s.nonFreqIncome) || 0); break;
+        case 'netMonthly': val = Number(s.netMonthly) || 0; break;
+      }
+      monthlyData[monthName][yearStr] = val;
+    });
+    
+    const sortedYears = Array.from(yearsSet).sort();
+    const monthOrder = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    const availableMonths = monthOrder.filter(m => monthlyData[m]);
+    
+    const momMetricLabels = {
+      totalExpense: 'Gasto Total', freqExpense: 'Gasto Frecuente', nonFreqExpense: 'Gasto No Frecuente',
+      totalIncome: 'Ingreso Total', freqIncome: 'Ingreso Frecuente', nonFreqIncome: 'Ingreso No Frecuente',
+      netMonthly: 'Neto'
+    };
+    
+    const momMetricColors = {
+      totalExpense: '#ff5252', freqExpense: '#ff3d00', nonFreqExpense: '#ffd740',
+      totalIncome: '#00e676', freqIncome: '#00b0ff', nonFreqIncome: '#e040fb',
+      netMonthly: '#ffd740'
+    };
+    
+    const datasets = sortedYears.map((year, idx) => {
+      const baseColor = momMetricColors[selectedMomMetric] || '#448aff';
+      const colors = ['#ff5252', '#00e676', '#448aff', '#ffd740', '#e040fb', '#00b0ff', '#ff3d00'];
+      const color = colors[idx % colors.length];
+      
+      return {
+        label: year,
+        data: availableMonths.map(m => monthlyData[m][year] || 0),
+        borderColor: color,
+        backgroundColor: color + '20',
+        borderWidth: 2.5,
+        pointRadius: 4,
+        pointBackgroundColor: color,
+        pointBorderColor: '#14172b',
+        pointBorderWidth: 2,
+        tension: 0.3,
+        fill: false
+      };
+    });
+    
+    monthOverMonthChart = new Chart(momCtx.getContext('2d'), {
+      type: 'line',
+      data: {
+        labels: availableMonths.map(m => m.substring(0, 3)),
+        datasets: datasets
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'top', labels: { color: textMuted, font: { size: 11, family: 'Outfit' }, boxWidth: 12, padding: 14, usePointStyle: true, pointStyle: 'circle' } },
+          tooltip: {
+            backgroundColor: dashBg === '#f0f4f8' ? 'rgba(255,255,255,0.97)' : 'rgba(14,18,30,0.97)',
+            titleColor: textBodyColor, bodyColor: textMuted,
+            borderColor: getVar('--border-color'), borderWidth: 1,
+            padding: 12, cornerRadius: 10,
+            callbacks: { label: ctx => ` ${ctx.dataset.label}: S/ ${ctx.parsed.y.toFixed(2)}` }
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            grid: { color: getVar('--border-color-light').substring(0, 7) + '40', drawBorder: false },
+            ticks: {
+              color: textMuted,
+              font: { family: 'Outfit', size: 10 },
+              callback: v => 'S/' + (v >= 1000 ? (v/1000).toFixed(1)+'k' : v)
+            },
+            border: { display: false }
+          },
+          x: {
+            grid: { display: false },
+            ticks: { color: textMuted, font: { family: 'Outfit', size: 10 } },
+            border: { display: false }
+          }
+        },
+        interaction: { mode: 'index', intersect: false },
+        animation: { duration: 700, easing: 'easeOutQuart' }
+      }
+    });
+  }
+  
   // Refresh header stats
   sortAndRender();
 }
@@ -1759,12 +1985,9 @@ function toggleTheme() {
   
   initTheme();
   
-  // Re-render charts so they pick up new CSS variables
-  if (document.getElementById('view-charts').classList.contains('active')) {
-    renderCharts();
-  }
-  if (document.getElementById('view-summary').classList.contains('active')) {
-    renderSummaryTable(summaries);
+  // Re-render dashboard so it picks up new CSS variables
+  if (document.getElementById('view-dashboard').classList.contains('active')) {
+    renderDashboard();
   }
 }
 
@@ -1819,7 +2042,7 @@ function handleFreqIncomeSubmit(e) {
       }
       
       showToast(res.message || 'Actualizado correctamente', 'success');
-      renderSummaryTable(summaries); // Refresca y trigger sortAndRender headers
+      renderDashboard(); // Refresca y trigger sortAndRender headers
     })
     .withFailureHandler((err) => {
       submitBtn.innerHTML = ogText;

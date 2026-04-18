@@ -73,8 +73,7 @@
           <h3>VISTA</h3>
           <nav class="nav-menu">
             <button class="nav-item active" data-tab="expenses"><i class="fa-solid fa-table"></i> Tabla de Gastos</button>
-            <button class="nav-item" data-tab="summary"><i class="fa-solid fa-chart-column"></i> Resumen Anual</button>
-            <button class="nav-item" data-tab="charts"><i class="fa-solid fa-chart-line"></i> Gráficos Anuales</button>
+            <button class="nav-item" data-tab="dashboard"><i class="fa-solid fa-chart-line"></i> Dashboard</button>
           </nav>
         </div>
 
@@ -240,10 +239,10 @@
           </div>
         </div>
 
-        <div id="view-summary" class="content-view">
+        <div id="view-dashboard" class="content-view">
           <!-- Year Filter Row -->
           <div class="dashboard-year-filter">
-            <div id="summaryYearChips" class="year-chips"></div>
+            <div id="dashboardYearChips" class="year-chips"></div>
           </div>
 
           <!-- KPI Cards Row -->
@@ -278,7 +277,7 @@
             </div>
           </div>
 
-          <!-- Charts Row -->
+          <!-- Charts Row - Enhanced with comparison chart -->
           <div class="dashboard-charts-row">
             <div class="dash-chart-card">
               <div class="dash-chart-title"><i class="fa-solid fa-chart-pie"></i> Composición de Ingresos</div>
@@ -291,6 +290,44 @@
             <div class="dash-chart-card dash-chart-wide">
               <div class="dash-chart-title"><i class="fa-solid fa-chart-bar"></i> Tendencia Mensual</div>
               <div class="dash-bar-wrapper"><canvas id="summaryTrendChart"></canvas></div>
+            </div>
+          </div>
+
+          <!-- New Comparison Chart Section -->
+          <div class="dashboard-comparison-section">
+            <div class="comparison-header">
+              <h4><i class="fa-solid fa-chart-area"></i> Comparativa Anual</h4>
+              <select id="dashboardMetricSelect" class="dashboard-metric-select">
+                  <option value="totalExpense">Gasto Total</option>
+                  <option value="freqExpense">Gasto Frecuente</option>
+                  <option value="nonFreqExpense">Gasto No Frecuente</option>
+                  <option value="totalIncome">Ingreso Total</option>
+                  <option value="freqIncome">Ingreso Frecuente</option>
+                  <option value="nonFreqIncome">Ingreso No Frecuente</option>
+                  <option value="netMonthly">Neto Mensual</option>
+              </select>
+            </div>
+            <div class="dashboard-comparison-chart">
+               <canvas id="dashboardComparisonChart"></canvas>
+            </div>
+          </div>
+
+          <!-- Month-over-Month Comparison Across Years -->
+          <div class="dashboard-comparison-section">
+            <div class="comparison-header">
+              <h4><i class="fa-solid fa-chart-simple"></i> Comparativa Mes a Mes (Años)</h4>
+              <select id="monthOverMonthMetricSelect" class="dashboard-metric-select">
+                  <option value="totalExpense">Gasto Total</option>
+                  <option value="freqExpense">Gasto Frecuente</option>
+                  <option value="nonFreqExpense">Gasto No Frecuente</option>
+                  <option value="totalIncome">Ingreso Total</option>
+                  <option value="freqIncome">Ingreso Frecuente</option>
+                  <option value="nonFreqIncome">Ingreso No Frecuente</option>
+                  <option value="netMonthly">Neto</option>
+              </select>
+            </div>
+            <div class="dashboard-comparison-chart">
+               <canvas id="monthOverMonthChart"></canvas>
             </div>
           </div>
 
@@ -317,23 +354,6 @@
                 </tbody>
               </table>
             </div>
-          </div>
-        </div>
-
-        <div id="view-charts" class="content-view">
-          <div class="chart-controls">
-              <select id="chartMetricSelect" class="chart-metric-select">
-                  <option value="totalExpense">Gasto Total</option>
-                  <option value="freqExpense">Gasto Frecuente</option>
-                  <option value="nonFreqExpense">Gasto No Frecuente</option>
-                  <option value="totalIncome">Ingreso Total</option>
-                  <option value="freqIncome">Ingreso Frecuente</option>
-                  <option value="nonFreqIncome">Ingreso No Frecuente</option>
-                  <option value="netMonthly">Neto Mensual</option>
-              </select>
-          </div>
-          <div class="chart-container">
-             <canvas id="annualChart"></canvas>
           </div>
         </div>
 
