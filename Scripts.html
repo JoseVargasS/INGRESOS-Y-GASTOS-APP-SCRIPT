@@ -5,7 +5,8 @@
 
 // Global State
 let currentTheme = localStorage.getItem('bucks_theme') || 'dark';
-var currentYear = 2026;
+const currentYearDefault = new Date().getFullYear();
+var currentYear = currentYearDefault;
 var currentMonth = 0;
 var transactionCache = [];
 var summaries = [];
@@ -650,9 +651,12 @@ function setupYearDropdown() {
   const wrapper = document.getElementById('yearDropdownWrapper');
   const head = document.getElementById('yearSelectedHead');
   const optionsContainer = document.getElementById('yearDropdownOptions');
+  const mobileSelect = document.getElementById('yearSelectMobile');
   
-  const years = [2026, 2025, 2024, 2023, 2022];
+  const currentYr = new Date().getFullYear();
+  const years = [currentYr, currentYr - 1, currentYr - 2, currentYr - 3, currentYr - 4];
   
+  // Populate desktop dropdown
   optionsContainer.innerHTML = '';
   years.forEach(y => {
     const div = document.createElement('div');
@@ -661,7 +665,7 @@ function setupYearDropdown() {
     
     div.addEventListener('click', () => {
       updateYearUI(y);
-      if(yearSelectMobile) yearSelectMobile.value = y;
+      if(mobileSelect) mobileSelect.value = y;
       updateHeaderDate();
       loadTransactions();
       
@@ -675,6 +679,18 @@ function setupYearDropdown() {
     
     optionsContainer.appendChild(div);
   });
+  
+  // Populate mobile select
+  if (mobileSelect) {
+    mobileSelect.innerHTML = '';
+    years.forEach(y => {
+      const option = document.createElement('option');
+      option.value = y;
+      option.textContent = y;
+      if (y === currentYear) option.selected = true;
+      mobileSelect.appendChild(option);
+    });
+  }
   
   head.addEventListener('click', (e) => {
     e.stopPropagation();
