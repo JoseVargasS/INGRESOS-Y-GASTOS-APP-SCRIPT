@@ -73,8 +73,7 @@
           <h3>VISTA</h3>
           <nav class="nav-menu">
             <button class="nav-item active" data-tab="expenses"><i class="fa-solid fa-table"></i> Tabla de Gastos</button>
-            <button class="nav-item" data-tab="summary"><i class="fa-solid fa-chart-column"></i> Resumen Anual</button>
-            <button class="nav-item" data-tab="charts"><i class="fa-solid fa-chart-line"></i> Gráficos Anuales</button>
+            <button class="nav-item" data-tab="summary"><i class="fa-solid fa-chart-column"></i> Análisis</button>
           </nav>
         </div>
 
@@ -241,8 +240,9 @@
         </div>
 
         <div id="view-summary" class="content-view">
+
           <!-- Year Filter Row -->
-          <div class="dashboard-year-filter">
+          <div class="analysis-header-row">
             <div id="summaryYearChips" class="year-chips"></div>
           </div>
 
@@ -278,27 +278,44 @@
             </div>
           </div>
 
-          <!-- Charts Row -->
-          <div class="dashboard-charts-row">
+          <!-- Section: Composición -->
+          <div class="analysis-section-header">
+            <span class="analysis-section-label"><i class="fa-solid fa-chart-pie"></i> Composición</span>
+          </div>
+          <div class="composition-row">
             <div class="dash-chart-card">
-              <div class="dash-chart-title"><i class="fa-solid fa-chart-pie"></i> Composición de Ingresos</div>
+              <div class="dash-chart-title"><i class="fa-solid fa-arrow-trend-up"></i> Ingresos</div>
               <div class="dash-pie-wrapper"><canvas id="pieIncomeChart"></canvas></div>
             </div>
             <div class="dash-chart-card">
-              <div class="dash-chart-title"><i class="fa-solid fa-chart-pie"></i> Composición de Gastos</div>
+              <div class="dash-chart-title"><i class="fa-solid fa-arrow-trend-down"></i> Gastos</div>
               <div class="dash-pie-wrapper"><canvas id="pieExpenseChart"></canvas></div>
-            </div>
-            <div class="dash-chart-card dash-chart-wide">
-              <div class="dash-chart-title"><i class="fa-solid fa-chart-bar"></i> Tendencia Mensual</div>
-              <div class="dash-bar-wrapper"><canvas id="summaryTrendChart"></canvas></div>
             </div>
           </div>
 
-          <!-- Detailed Table -->
-          <div class="summary-table-section">
-            <div class="summary-table-header">
-              <h4><i class="fa-solid fa-table"></i> Detalle Mensual</h4>
+          <!-- Section: Comparativa Interanual -->
+          <div class="analysis-section-header">
+            <span class="analysis-section-label"><i class="fa-solid fa-chart-bar"></i> Comparativa Interanual</span>
+            <div class="metric-pills" id="metricPills">
+              <button class="metric-pill active" data-metric="comparison">Resumen</button>
+              <button class="metric-pill" data-metric="totalExpense">Gasto Total</button>
+              <button class="metric-pill" data-metric="freqExpense">G. Frecuente</button>
+              <button class="metric-pill" data-metric="nonFreqExpense">G. No Frec.</button>
+              <button class="metric-pill" data-metric="totalIncome">Ing. Total</button>
+              <button class="metric-pill" data-metric="freqIncome">Ing. Frecuente</button>
+              <button class="metric-pill" data-metric="nonFreqIncome">Ing. No Frec.</button>
+              <button class="metric-pill" data-metric="netMonthly">Neto</button>
             </div>
+          </div>
+          <div class="interannual-chart-container" id="interannualChartContainer">
+            <!-- Chart injected by renderCharts() -->
+          </div>
+
+          <!-- Section: Detalle Mensual -->
+          <div class="analysis-section-header detail-section-header">
+            <span class="analysis-section-label"><i class="fa-solid fa-table-list"></i> Detalle Mensual</span>
+          </div>
+          <div class="summary-table-section">
             <div class="table-container">
               <table class="summary-table">
                 <thead>
@@ -317,23 +334,6 @@
                 </tbody>
               </table>
             </div>
-          </div>
-        </div>
-
-        <div id="view-charts" class="content-view">
-          <div class="chart-controls">
-              <select id="chartMetricSelect" class="chart-metric-select">
-                  <option value="totalExpense">Gasto Total</option>
-                  <option value="freqExpense">Gasto Frecuente</option>
-                  <option value="nonFreqExpense">Gasto No Frecuente</option>
-                  <option value="totalIncome">Ingreso Total</option>
-                  <option value="freqIncome">Ingreso Frecuente</option>
-                  <option value="nonFreqIncome">Ingreso No Frecuente</option>
-                  <option value="netMonthly">Neto Mensual</option>
-              </select>
-          </div>
-          <div class="chart-container">
-             <canvas id="annualChart"></canvas>
           </div>
         </div>
 
