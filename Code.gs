@@ -12,8 +12,7 @@ function doGet(e) {
   var template = HtmlService.createTemplateFromFile('Index');
   return template.evaluate()
       .setTitle('Bucks Manager')
-      .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no')
-      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no');
 }
 
 /**

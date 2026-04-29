@@ -19,6 +19,8 @@ var searchResults = [];
 var lastDeletedTransaction = null;
 var undoTimeout = null;
 var currentChartMetric = 'comparison';
+var chartPluginsRegistered = false;
+var resizeRenderTimer = null;
 
 const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 
@@ -66,59 +68,51 @@ const sidebarToggle = document.getElementById('sidebarToggle');
 const appSidebar = document.getElementById('appSidebar');
 const sidebarOverlay = document.getElementById('sidebarOverlay');
 
+function registerChartPluginsOnce() {
+  if (chartPluginsRegistered || typeof Chart === 'undefined' || typeof ChartDataLabels === 'undefined') return;
+  chartPluginsRegistered = true;
+  Chart.register(ChartDataLabels);
+}
+
 // ============================================
 // SKELETON LOADERS
 // ============================================
-function showTableSkeleton(rows = 6) {
-  const tbody = document.getElementById('transactionsTableBody');
-  if (!tbody) return;
-  
-  let html = '';
-  for (let i = 0; i < rows; i++) {
-    html += `
-      <tr class="skeleton-tr">
-        <td><div class="shimmer skeleton-row"></div></td>
-        <td><div class="shimmer skeleton-row"></div></td>
-        <td><div class="shimmer skeleton-row"></div></td>
-        <td><div class="shimmer skeleton-row"></div></td>
-        <td><div class="shimmer skeleton-row" style="width: 60px; margin: 0 auto;"></div></td>
-      </tr>
-    `;
-  }
-  tbody.innerHTML = html;
-  
-  // Also skeletonize stats
-  const statIds = ['statFreqIncome', 'statNoFreqIncome', 'statFreqExpense', 'statNoFreqExpense', 'statTotalExpense', 'statBalance'];
-  statIds.forEach(id => {
+const TABLE_SKELETON_WIDTHS = ['116px', '112px', '100%', '148px', '92px'];
+const SUMMARY_SKELETON_WIDTHS = ['128px', '104px', '104px', '104px', '104px', '118px', '118px'];
+
+function buildSkeletonRows(rows, widths, className = '') {
+  return Array.from({ length: rows }, () => `
+    <tr class="skeleton-tr ${className}">
+      ${widths.map(width => `
+        <td>
+          <div class="shimmer skeleton-row" style="--skeleton-width:${width};"></div>
+        </td>
+      `).join('')}
+    </tr>
+  `).join('');
+}
+
+function setValueSkeleton(ids, className = 'skeleton-text') {
+  ids.forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.innerHTML = '<div class="shimmer skeleton-text" style="width: 100px; margin-top: 5px;"></div>';
+    if (el) el.innerHTML = `<div class="shimmer ${className}"></div>`;
   });
 }
 
+function showTableSkeleton(rows = 8) {
+  const tbody = document.getElementById('transactionsTableBody');
+  if (!tbody) return;
+
+  tbody.innerHTML = buildSkeletonRows(rows, TABLE_SKELETON_WIDTHS, 'transaction-skeleton-row');
+  setValueSkeleton(['statFreqIncome', 'statNoFreqIncome', 'statFreqExpense', 'statNoFreqExpense', 'statTotalExpense', 'statBalance'], 'skeleton-stat-value');
+}
+
 function showSummarySkeleton() {
-  const kpiIds = ['kpiTotalIncome', 'kpiTotalExpense', 'kpiNetBalance', 'kpiSavingsRate'];
-  kpiIds.forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.innerHTML = '<div class="shimmer skeleton-text" style="width: 80px; margin-top: 10px; height: 18px;"></div>';
-  });
-  
+  setValueSkeleton(['kpiTotalIncome', 'kpiTotalExpense', 'kpiNetBalance', 'kpiSavingsRate'], 'skeleton-kpi-value');
+
   const tbody = document.getElementById('summaryTableBody');
   if (tbody) {
-    let html = '';
-    for (let i = 0; i < 4; i++) {
-      html += `
-        <tr>
-          <td><div class="shimmer skeleton-row"></div></td>
-          <td><div class="shimmer skeleton-row"></div></td>
-          <td><div class="shimmer skeleton-row"></div></td>
-          <td><div class="shimmer skeleton-row"></div></td>
-          <td><div class="shimmer skeleton-row"></div></td>
-          <td><div class="shimmer skeleton-row"></div></td>
-          <td><div class="shimmer skeleton-row"></div></td>
-        </tr>
-      `;
-    }
-    tbody.innerHTML = html;
+    tbody.innerHTML = buildSkeletonRows(12, SUMMARY_SKELETON_WIDTHS, 'summary-skeleton-row');
   }
 }
 
@@ -950,14 +944,17 @@ function loadTransactions() {
   google.script.run
     .withSuccessHandler(renderTransactions)
     .withFailureHandler((error) => {
-      tbody.innerHTML = `
-        <tr>
-          <td colspan="5" style="text-align:center; padding: 30px; color: var(--accent-red);">
-            <i class="fa-solid fa-exclamation-circle" style="font-size: 24px; margin-bottom: 10px;"></i><br>
-            Error al cargar datos
-          </td>
-        </tr>
-      `;
+      const tbody = document.getElementById('transactionsTableBody');
+      if (tbody) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="5" style="text-align:center; padding: 30px; color: var(--accent-red);">
+              <i class="fa-solid fa-exclamation-circle" style="font-size: 24px; margin-bottom: 10px;"></i><br>
+              Error al cargar datos
+            </td>
+          </tr>
+        `;
+      }
       showToast('Error al cargar transacciones: ' + error.message, 'error');
     })
     .getTransactions(currentMonth, currentYear);
@@ -1016,6 +1013,8 @@ function renderTransactions(data, updateCache = true) {
     // CORRECCIÓN: Sombreado para todos los tipos
     if (tx.type === 'GASTO FRECUENTE') {
       row.classList.add('row-gasto-frecuente');
+    } else if (tx.type === 'GASTO NO FRECUENTE') {
+      row.classList.add('row-gasto-no-frecuente');
     } else if (tx.type === 'INGRESO FRECUENTE') {
       row.classList.add('row-ingreso-frecuente');
     } else if (tx.type === 'INGRESO NO FRECUENTE') {
@@ -1159,7 +1158,8 @@ window.toggleDetail = function(rowId, btn) {
 window.addEventListener('resize', () => {
   checkDetailOverflows();
   if (myChart) {
-    setTimeout(renderCharts, 100);
+    clearTimeout(resizeRenderTimer);
+    resizeRenderTimer = setTimeout(renderCharts, 160);
   }
 });
 
@@ -1520,7 +1520,8 @@ function renderSummaryTable(data) {
     return;
   }
   
-  Chart.register(ChartDataLabels);
+  registerChartPluginsOnce();
+  const isMobileSummary = window.innerWidth <= 768;
 
   // ── Extract available years ──────────────────────────────────────────────
   const yearsSet = new Set();
@@ -1540,6 +1541,7 @@ function renderSummaryTable(data) {
   const chipsEl = document.getElementById('summaryYearChips');
   if (chipsEl) {
     chipsEl.innerHTML = '';
+    const yearChipFragment = document.createDocumentFragment();
     years.forEach(yr => {
       const btn = document.createElement('button');
       btn.className = 'year-chip-btn' + (yr === summarySelectedYear ? ' active' : '');
@@ -1548,8 +1550,9 @@ function renderSummaryTable(data) {
         summarySelectedYear = yr;
         renderSummaryTable(summaries);
       });
-      chipsEl.appendChild(btn);
+      yearChipFragment.appendChild(btn);
     });
+    chipsEl.appendChild(yearChipFragment);
   }
 
   // ── Filter data for selected year ────────────────────────────────────────
@@ -1592,19 +1595,19 @@ function renderSummaryTable(data) {
   const textBodyColor = getVar('--text-primary');
   const textMuted = getVar('--text-secondary');
   const dashBg = getVar('--bg-dark');
-  const pieBorderColor = currentTheme === 'light' ? '#ffffff' : '#161926';
+  const pieBorderColor = getVar('--bg-card');
 
   // ── Pie: Income Breakdown ────────────────────────────────────────────────
   const pieIncCtx = document.getElementById('pieIncomeChart');
   if (pieIncCtx) {
     if (dashPieIncome) dashPieIncome.destroy();
     dashPieIncome = new Chart(pieIncCtx.getContext('2d'), {
-      type: 'pie',
+      type: 'doughnut',
       data: {
         labels: ['Ing. Frecuente', 'Ing. No Frec.'],
         datasets: [{
           data: [totFreqInc, totNoFreqInc],
-          backgroundColor: ['#00e676', '#00b0ff'],   // Green vs Cyan Blue — high contrast
+          backgroundColor: ['#00D26A', '#2D9CDB'],   // Frequent green vs non-frequent blue
           borderColor: pieBorderColor,
           borderWidth: 2,
           hoverOffset: 10
@@ -1612,9 +1615,10 @@ function renderSummaryTable(data) {
       },
       options: {
         responsive: true, maintainAspectRatio: false,
+        cutout: isMobileSummary ? '58%' : '54%',
         plugins: {
-          legend: { position: 'bottom', labels: { color: textMuted, font: { size: 11, family: 'Outfit' }, boxWidth: 12, padding: 14 } },
-          tooltip: { backgroundColor: dashBg === '#f0f4f8' ? 'rgba(255,255,255,0.97)' : 'rgba(14,18,30,0.97)', padding: 12, cornerRadius: 10, bodyColor: textBodyColor, titleColor: textBodyColor, borderColor: getVar('--border-color'), borderWidth: 1,
+          legend: { position: 'bottom', labels: { color: textMuted, font: { size: isMobileSummary ? 10 : 11, family: 'DM Sans', weight: '700' }, boxWidth: 10, padding: isMobileSummary ? 8 : 14 } },
+          tooltip: { backgroundColor: dashBg === '#f3f8ef' ? 'rgba(255,255,255,0.97)' : 'rgba(15,17,16,0.97)', padding: 12, cornerRadius: 8, bodyColor: textBodyColor, titleColor: textBodyColor, borderColor: getVar('--border-color'), borderWidth: 1,
             callbacks: { label: ctx => ` S/ ${ctx.parsed.toFixed(2)}` }
           },
           datalabels: { 
@@ -1626,9 +1630,9 @@ function renderSummaryTable(data) {
               dataArr.forEach(data => { sum += Number(data); });
               if (sum === 0) return '0%';
               let percentage = (value * 100 / sum).toFixed(1) + "%";
-              return value > 0 ? percentage : '';
+              return value > 0 && (!isMobileSummary || (value * 100 / sum) >= 5) ? percentage : '';
             },
-            font: { weight: 'bold', size: 13, family: 'Outfit' }
+            font: { weight: 'bold', size: isMobileSummary ? 11 : 13, family: 'DM Sans' }
           }
         },
         animation: { animateRotate: true, animateScale: true, duration: 900, easing: 'easeOutCubic' }
@@ -1641,12 +1645,12 @@ function renderSummaryTable(data) {
   if (pieExpCtx) {
     if (dashPieExpense) dashPieExpense.destroy();
     dashPieExpense = new Chart(pieExpCtx.getContext('2d'), {
-      type: 'pie',
+      type: 'doughnut',
       data: {
         labels: ['Gasto Frec.', 'Gasto No Frec.'],
         datasets: [{
           data: [totFreqExp, totNoFreqExp],
-          backgroundColor: ['#ff3d00', '#ffd740'],   // Vivid Red vs Amber — high contrast
+          backgroundColor: ['#FF4D57', '#FFC145'],   // Frequent red vs non-frequent gold
           borderColor: pieBorderColor,
           borderWidth: 2,
           hoverOffset: 10
@@ -1654,9 +1658,10 @@ function renderSummaryTable(data) {
       },
       options: {
         responsive: true, maintainAspectRatio: false,
+        cutout: isMobileSummary ? '58%' : '54%',
         plugins: {
-          legend: { position: 'bottom', labels: { color: textMuted, font: { size: 11, family: 'Outfit' }, boxWidth: 12, padding: 14 } },
-          tooltip: { backgroundColor: dashBg === '#f0f4f8' ? 'rgba(255,255,255,0.97)' : 'rgba(14,18,30,0.97)', padding: 12, cornerRadius: 10, bodyColor: textBodyColor, titleColor: textBodyColor, borderColor: getVar('--border-color'), borderWidth: 1,
+          legend: { position: 'bottom', labels: { color: textMuted, font: { size: isMobileSummary ? 10 : 11, family: 'DM Sans', weight: '700' }, boxWidth: 10, padding: isMobileSummary ? 8 : 14 } },
+          tooltip: { backgroundColor: dashBg === '#f3f8ef' ? 'rgba(255,255,255,0.97)' : 'rgba(15,17,16,0.97)', padding: 12, cornerRadius: 8, bodyColor: textBodyColor, titleColor: textBodyColor, borderColor: getVar('--border-color'), borderWidth: 1,
             callbacks: { label: ctx => ` S/ ${ctx.parsed.toFixed(2)}` }
           },
           datalabels: { 
@@ -1668,9 +1673,9 @@ function renderSummaryTable(data) {
               dataArr.forEach(data => { sum += Number(data); });
               if (sum === 0) return '0%';
               let percentage = (value * 100 / sum).toFixed(1) + "%";
-              return value > 0 ? percentage : '';
+              return value > 0 && (!isMobileSummary || (value * 100 / sum) >= 5) ? percentage : '';
             },
-            font: { weight: 'bold', size: 13, family: 'Outfit' }
+            font: { weight: 'bold', size: isMobileSummary ? 11 : 13, family: 'DM Sans' }
           }
         },
         animation: { animateRotate: true, animateScale: true, duration: 900, easing: 'easeOutCubic' }
@@ -1697,19 +1702,19 @@ function renderSummaryTable(data) {
 
     const netData = incData.map((v, i) => v - expData[i]);
 
-    Chart.register(ChartDataLabels);
+    registerChartPluginsOnce();
     dashTrend = new Chart(trendCtx.getContext('2d'), {
       type: 'bar',
       data: {
         labels: mLabels,
         datasets: [
-          { label: 'Ingresos', data: incData, backgroundColor: 'rgba(0,230,118,0.8)', borderRadius: 6, barPercentage: 0.6, order: 2 },
-          { label: 'Gastos',   data: expData, backgroundColor: 'rgba(255,82,82,0.8)',  borderRadius: 6, barPercentage: 0.6, order: 2 },
+          { label: 'Ingresos', data: incData, backgroundColor: '#00D26A', borderRadius: 6, barPercentage: 0.6, order: 2 },
+          { label: 'Gastos',   data: expData, backgroundColor: '#FF4D57',  borderRadius: 6, barPercentage: 0.6, order: 2 },
           {
             label: 'Neto', data: netData, type: 'line',
-            borderColor: '#ffd740', backgroundColor: 'rgba(255, 215, 64, 0.1)',
-            borderWidth: 2.5, pointRadius: 4, pointBackgroundColor: '#ffd740',
-            pointBorderColor: '#14172b', pointBorderWidth: 2,
+            borderColor: '#2D9CDB', backgroundColor: 'rgba(45, 156, 219, 0.16)',
+            borderWidth: 2.5, pointRadius: 4, pointBackgroundColor: '#2D9CDB',
+            pointBorderColor: '#0f1110', pointBorderWidth: 2,
             tension: 0.4, fill: true, order: 1
           }
         ]
@@ -1717,10 +1722,10 @@ function renderSummaryTable(data) {
       options: {
         responsive: true, maintainAspectRatio: false,
         plugins: {
-          legend: { position: 'top', labels: { color: textMuted, font: { size: 11, family: 'Outfit' }, boxWidth: 12, padding: 14, usePointStyle: true, pointStyle: 'circle' } },
+          legend: { position: 'top', labels: { color: textMuted, font: { size: 11, family: 'DM Sans' }, boxWidth: 12, padding: 14, usePointStyle: true, pointStyle: 'circle' } },
           tooltip: {
-            backgroundColor: dashBg === '#f0f4f8' ? 'rgba(255,255,255,0.97)' : 'rgba(14,18,30,0.97)', titleColor: textBodyColor, bodyColor: textMuted,
-            borderColor: getVar('--border-color'), borderWidth: 1, padding: 12, cornerRadius: 10,
+            backgroundColor: dashBg === '#f3f8ef' ? 'rgba(255,255,255,0.97)' : 'rgba(15,17,16,0.97)', titleColor: textBodyColor, bodyColor: textMuted,
+            borderColor: getVar('--border-color'), borderWidth: 1, padding: 12, cornerRadius: 8,
             callbacks: {
               label: ctx => ` ${ctx.dataset.label}: S/ ${ctx.parsed.y.toFixed(2)}`,
               labelColor: ctx => ({ borderColor: ctx.dataset.borderColor || ctx.dataset.backgroundColor, backgroundColor: ctx.dataset.borderColor || ctx.dataset.backgroundColor })
@@ -1729,8 +1734,8 @@ function renderSummaryTable(data) {
           datalabels: { display: false }
         },
         scales: {
-          y: { beginAtZero: true, grid: { color: getVar('--border-color-light').substring(0, 7) + '40', drawBorder: false }, ticks: { color: textMuted, font: { family: 'Outfit', size: 10 }, callback: v => 'S/' + (v >= 1000 ? (v/1000).toFixed(1)+'k' : v) }, border: { display: false } },
-          x: { grid: { display: false }, ticks: { color: textMuted, font: { family: 'Outfit', size: 10 } }, border: { display: false } }
+          y: { beginAtZero: true, grid: { color: getVar('--border-color-light'), drawBorder: false }, ticks: { color: textMuted, font: { family: 'DM Sans', size: 10 }, callback: v => 'S/' + (v >= 1000 ? (v/1000).toFixed(1)+'k' : v) }, border: { display: false } },
+          x: { grid: { display: false }, ticks: { color: textMuted, font: { family: 'DM Sans', size: 10 } }, border: { display: false } }
         },
         interaction: { mode: 'index', intersect: false },
         animation: { duration: 700, easing: 'easeOutQuart' }
@@ -1742,6 +1747,7 @@ function renderSummaryTable(data) {
   const tbody = document.getElementById('summaryTableBody');
   if (tbody) {
     tbody.innerHTML = '';
+    const fragment = document.createDocumentFragment();
     
     // Calcular fijos para las barras visuales (Data Bars)
     let maxInc = 0, maxExp = 0, maxNet = 0;
@@ -1759,8 +1765,8 @@ function renderSummaryTable(data) {
       const netPct = maxNet ? (Math.abs(row.netMonthly) / maxNet) * 100 : 0;
       
       const isLight = currentTheme === 'light';
-      const expGrad = isLight ? 'rgba(255,82,82,0.12)' : 'rgba(255,82,82,0.2)';
-      const netGrad = row.netMonthly >= 0 ? (isLight ? 'rgba(0,230,118,0.12)' : 'rgba(0,230,118,0.2)') : expGrad;
+      const expGrad = isLight ? 'rgba(255,77,87,0.16)' : 'rgba(255,77,87,0.24)';
+      const netGrad = row.netMonthly >= 0 ? (isLight ? 'rgba(0,210,106,0.16)' : 'rgba(0,210,106,0.24)') : expGrad;
 
       const tr = document.createElement('tr');
       tr.innerHTML = `
@@ -1774,8 +1780,9 @@ function renderSummaryTable(data) {
           ${formatMoney(row.netMonthly)}
         </td>
       `;
-      tbody.appendChild(tr);
+      fragment.appendChild(tr);
     });
+    tbody.appendChild(fragment);
   }
   
   // Refresh header stats & interannual chart
@@ -1878,6 +1885,7 @@ function renderCharts() {
 
   const metric = currentChartMetric || 'comparison';
   const isMobile = window.innerWidth <= 768;
+  const viewportW = Math.max(window.innerWidth || 390, 320);
 
   // Build year-keyed data
   const yearsData = {}, incomeData = {}, expenseData = {};
@@ -1914,12 +1922,12 @@ function renderCharts() {
   let mLabels = monthNames.map(m => m.substring(0, 3));
   
   const palette = [
-    { main: '#448aff', light: '#82b1ff' },
-    { main: '#00e676', light: '#69f0ae' },
-    { main: '#ff5252', light: '#ff8a80' },
-    { main: '#ffd740', light: '#ffe57f' },
-    { main: '#e040fb', light: '#ea80fc' },
-    { main: '#ffab40', light: '#ffd180' }
+    { main: '#2D9CDB', light: '#78C6EF' },
+    { main: '#00D26A', light: '#70E7AA' },
+    { main: '#FF4D57', light: '#FF9AA0' },
+    { main: '#FFC145', light: '#FFD98A' },
+    { main: '#A855F7', light: '#C99CFF' },
+    { main: '#FF8A00', light: '#FFB35C' }
   ];
 
   let datasets = [];
@@ -1933,24 +1941,24 @@ function renderCharts() {
       const yearlyNets     = yearlyIncomes.map((inc, i) => inc - yearlyExpenses[i]);
 
       datasets.push({ label: 'Ingresos Totales', data: yearlyIncomes,
-        backgroundColor: 'rgba(0,230,118,0.8)', borderColor: '#00e676', borderWidth: 1, borderRadius: 4, order: 2, maxBarThickness: 55 });
+        backgroundColor: '#00D26A', borderColor: '#00D26A', borderWidth: 1, borderRadius: 4, order: 2, maxBarThickness: isMobile ? 18 : 55 });
       datasets.push({ label: 'Gastos Totales', data: yearlyExpenses.map(v => -v),
-        backgroundColor: 'rgba(255,82,82,0.8)', borderColor: '#ff5252', borderWidth: 1, borderRadius: 4, order: 2, maxBarThickness: 55 });
+        backgroundColor: '#FF4D57', borderColor: '#FF4D57', borderWidth: 1, borderRadius: 4, order: 2, maxBarThickness: isMobile ? 18 : 55 });
       datasets.push({ label: 'Balance Neto', data: yearlyNets, type: 'line',
-        borderColor: '#00b0ff', backgroundColor: 'rgba(0,176,255,0.2)', borderWidth: 3,
-        pointRadius: 5, pointBackgroundColor: '#00b0ff', tension: 0.4, fill: true, order: 1 });
+        borderColor: '#2D9CDB', backgroundColor: 'rgba(45,156,219,0.20)', borderWidth: 3,
+        pointRadius: 5, pointBackgroundColor: '#2D9CDB', tension: 0.4, fill: true, order: 1 });
     } else {
       // SPECIFIC YEAR: X = Months
       const yr = summarySelectedYear;
       if (allYears.has(yr)) {
         datasets.push({ label: `Ingresos ${yr}`, data: incomeData[yr],
-          backgroundColor: 'rgba(0,230,118,0.8)', borderColor: '#00e676', borderWidth: 1, borderRadius: 4, order: 2, maxBarThickness: 40 });
+          backgroundColor: '#00D26A', borderColor: '#00D26A', borderWidth: 1, borderRadius: 4, order: 2, maxBarThickness: isMobile ? 10 : 40 });
         datasets.push({ label: `Gastos ${yr}`, data: expenseData[yr].map(v => -v),
-          backgroundColor: 'rgba(255,82,82,0.8)', borderColor: '#ff5252', borderWidth: 1, borderRadius: 4, order: 2, maxBarThickness: 40 });
+          backgroundColor: '#FF4D57', borderColor: '#FF4D57', borderWidth: 1, borderRadius: 4, order: 2, maxBarThickness: isMobile ? 10 : 40 });
         const netVals = incomeData[yr].map((v, j) => v - expenseData[yr][j]);
         datasets.push({ label: `Neto ${yr}`, data: netVals, type: 'line',
-          borderColor: '#ffd740', backgroundColor: 'rgba(255,215,64,0.2)', borderWidth: 3,
-          pointRadius: 5, pointBackgroundColor: '#ffd740', tension: 0.4, fill: true, order: 1 });
+          borderColor: '#2D9CDB', backgroundColor: 'rgba(45,156,219,0.20)', borderWidth: 3,
+          pointRadius: 5, pointBackgroundColor: '#2D9CDB', tension: 0.4, fill: true, order: 1 });
       }
     }
   } else {
@@ -1966,7 +1974,7 @@ function renderCharts() {
       if (summarySelectedYear === 'Todos') {
         c = sortedYears.length === 1 ? (metricColors[metric] || palette[0]) : palette[i % palette.length];
       } else {
-        c = isHighlighted ? (metricColors[metric] || palette[0]) : { main: '#5a6275' };
+        c = isHighlighted ? (metricColors[metric] || palette[0]) : { main: '#56645e' };
       }
       datasets.push({
         label: yr,
@@ -1976,8 +1984,9 @@ function renderCharts() {
         borderColor: c.main,
         borderWidth: isHighlighted ? 1.5 : 0,
         borderRadius: 4,
-        barPercentage: 0.7,
-        categoryPercentage: 0.8
+        barPercentage: isMobile ? 0.52 : 0.7,
+        categoryPercentage: isMobile ? 0.64 : 0.8,
+        maxBarThickness: isMobile ? 9 : 36
       });
     });
   }
@@ -1985,41 +1994,6 @@ function renderCharts() {
   // ── Destroy previous chart ──
   if (myChart) { myChart.destroy(); myChart = null; }
 
-  // ── Calculate required canvas width ──
-  const containerH = isMobile ? 310 : 370; // inner canvas height in px
-  const dataLen = mLabels.length || 1;
-  const barsPerLabel = datasets.filter(d => d.type === 'bar' || !d.type).length || 1;
-  let requiredW;
-
-  if (metric === 'comparison' && (summarySelectedYear === 'Todos' || !summarySelectedYear)) {
-    // Few bars (one per year) - fit naturally but give room for data labels
-    requiredW = Math.max(420, sortedYears.length * 130);
-  } else if (metric === 'comparison') {
-    // 12 months × 2 bar datasets
-    requiredW = Math.max(620, dataLen * barsPerLabel * 40 + 100);
-  } else {
-    // 12 months × N years (up to 5)
-    requiredW = Math.max(720, dataLen * barsPerLabel * 34 + 120);
-  }
-
-  // ── Rebuild container markup with explicit pixel dimensions ──
-  const innerStyle = isMobile 
-    ? `position:relative; height:${containerH}px; min-width:${requiredW}px; width:${requiredW}px;`
-    : `position:relative; height:${containerH}px; width:100%;`;
-  chartContainer.innerHTML = `
-    <div class="chart-scroll-wrapper">
-      <div id="annualChartInner" style="${innerStyle}">
-        <canvas id="annualChart"></canvas>
-      </div>
-    </div>`;
-
-  const canvas = document.getElementById('annualChart');
-  Chart.register(ChartDataLabels);
-
-  const getVar = (n) => getComputedStyle(document.body).getPropertyValue(n).trim() || '#fff';
-  const textBodyColor = getVar('--text-primary');
-  const textMuted     = getVar('--text-secondary');
-  const tooltipBg     = currentTheme === 'light' ? 'rgba(255,255,255,0.95)' : 'rgba(10,14,28,0.95)';
   const titles = {
     comparison:    'Comparativa de ingresos vs gastos por año',
     totalExpense:  'Comparativa de gastos totales por año',
@@ -2031,57 +2005,118 @@ function renderCharts() {
     netMonthly:    'Evolución del balance neto anual'
   };
 
+  // ── Calculate required canvas width ──
+  const containerH = isMobile ? 324 : 370; // inner canvas height in px
+  const dataLen = mLabels.length || 1;
+  const barsPerLabel = datasets.filter(d => d.type === 'bar' || !d.type).length || 1;
+  const mobileBaseW = Math.max(viewportW - 44, 320);
+  let requiredW;
+
+  if (metric === 'comparison' && (summarySelectedYear === 'Todos' || !summarySelectedYear)) {
+    // Few bars (one per year) - fit naturally but give room for data labels
+    requiredW = isMobile
+      ? Math.max(mobileBaseW, sortedYears.length * 74)
+      : Math.max(420, sortedYears.length * 130);
+  } else if (metric === 'comparison') {
+    // 12 months × 2 bar datasets
+    requiredW = isMobile
+      ? Math.max(mobileBaseW, dataLen * barsPerLabel * 13 + 58)
+      : Math.max(620, dataLen * barsPerLabel * 40 + 100);
+  } else {
+    // 12 months × N years (up to 5)
+    requiredW = isMobile
+      ? Math.max(mobileBaseW, dataLen * barsPerLabel * 9 + 64)
+      : Math.max(720, dataLen * barsPerLabel * 34 + 120);
+  }
+
+  // ── Rebuild container markup with explicit pixel dimensions ──
+  const innerStyle = isMobile 
+    ? `position:relative; height:${containerH}px; min-width:${requiredW}px; width:${requiredW}px;`
+    : `position:relative; height:${containerH}px; width:100%;`;
+  const chartTitle = (titles[metric] || 'Gráfico') + (summarySelectedYear && summarySelectedYear !== 'Todos' ? ` (${summarySelectedYear})` : '');
+  chartContainer.innerHTML = `
+    ${isMobile ? `
+      <div class="chart-mobile-head">
+        <div>
+          <span class="chart-mobile-kicker">Comparativa</span>
+          <h4>${chartTitle}</h4>
+        </div>
+        ${requiredW > mobileBaseW + 8 ? '<span class="chart-swipe-hint"><i class="fa-solid fa-arrows-left-right"></i> Desliza</span>' : ''}
+      </div>` : ''}
+    <div class="chart-scroll-wrapper">
+      <div id="annualChartInner" style="${innerStyle}">
+        <canvas id="annualChart"></canvas>
+      </div>
+    </div>`;
+
+  const canvas = document.getElementById('annualChart');
+  registerChartPluginsOnce();
+
+  const getVar = (n) => getComputedStyle(document.body).getPropertyValue(n).trim() || '#fff';
+  const textBodyColor = getVar('--text-primary');
+  const textMuted     = getVar('--text-secondary');
+  const tooltipBg     = currentTheme === 'light' ? 'rgba(255,255,255,0.95)' : 'rgba(15,17,16,0.95)';
   myChart = new Chart(canvas.getContext('2d'), {
     type: 'bar',
     data: { labels: mLabels, datasets },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      layout: { padding: { top: isMobile ? 40 : 30, bottom: 10, left: 10, right: 10 } },
+      layout: { padding: { top: isMobile ? 18 : 30, bottom: isMobile ? 4 : 10, left: isMobile ? 0 : 10, right: isMobile ? 2 : 10 } },
       plugins: {
         legend: {
           display: true, position: 'top', align: isMobile ? 'start' : 'center',
           labels: { color: textMuted, usePointStyle: true, pointStyle: 'circle',
-            font: { size: isMobile ? 10 : 12, family: 'Outfit' }, padding: 15, boxWidth: 8 }
+            font: { size: isMobile ? 10 : 12, family: 'DM Sans', weight: '700' }, padding: isMobile ? 8 : 15, boxWidth: 8 }
         },
         title: {
-          display: true,
-          text: (titles[metric] || 'Gráfico') + (summarySelectedYear && summarySelectedYear !== 'Todos' ? ` (${summarySelectedYear})` : ''),
+          display: !isMobile,
+          text: chartTitle,
           color: textBodyColor,
-          align: isMobile ? 'start' : 'center',
-          font: { size: isMobile ? 15 : 18, weight: '700', family: 'Outfit' },
+          align: 'center',
+          font: { size: 18, weight: '700', family: 'DM Sans' },
           padding: { bottom: 24 }
         },
         tooltip: {
           backgroundColor: tooltipBg, titleColor: textBodyColor, bodyColor: textMuted,
-          borderColor: getVar('--border-color'), borderWidth: 1, padding: 12, cornerRadius: 10,
+          borderColor: getVar('--border-color'), borderWidth: 1, padding: 12, cornerRadius: 8,
           callbacks: { label: ctx => ` ${ctx.dataset.label}: S/ ${Math.abs(ctx.parsed.y).toFixed(2)}` }
         },
         datalabels: {
-          display: ctx => Math.abs(ctx.dataset.data[ctx.dataIndex]) > 0,
+          display: ctx => !isMobile && Math.abs(ctx.dataset.data[ctx.dataIndex]) > 0,
           anchor: 'end',
           align: 'end',
           offset: 4,
-          color: currentTheme === 'light' ? '#1e293b' : '#ffffff',
+          color: currentTheme === 'light' ? '#111411' : '#f7f8f4',
           backgroundColor: currentTheme === 'light' ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.5)',
           borderColor: currentTheme === 'light' ? 'rgba(0,0,0,0.08)' : 'transparent',
           borderWidth: currentTheme === 'light' ? 1 : 0,
           borderRadius: 4,
           padding: 3,
-          font: { size: isMobile ? 10 : 11, weight: '700', family: 'Outfit' },
+          font: { size: isMobile ? 10 : 11, weight: '700', family: 'DM Sans' },
           formatter: v => 'S/' + Math.abs(v).toFixed(0),
           rotation: -45
         }
       },
       scales: {
         y: {
-          beginAtZero: true, grid: { color: getVar('--border-color-light').substring(0, 7) + '40', drawBorder:false },
+          beginAtZero: true, grid: { color: getVar('--border-color-light'), drawBorder:false },
           ticks: { 
-            color: textMuted, font:{ size:isMobile?9:11, family:'Outfit' }, 
+            color: textMuted, font:{ size:isMobile?8:11, family:'DM Sans' },
+            maxTicksLimit: isMobile ? 5 : 8,
             callback: v => 'S/'+(Math.abs(v)>=1000?(Math.abs(v)/1000).toFixed(1)+'k':Math.abs(v)) 
           }
         },
-        x: { grid:{ display:false }, ticks:{ color: textMuted, font:{ size:isMobile?10:11, family:'Outfit' } } }
+        x: {
+          grid:{ display:false },
+          ticks:{
+            color: textMuted,
+            autoSkip: false,
+            maxRotation: 0,
+            minRotation: 0,
+            font:{ size:isMobile?9:11, family:'DM Sans', weight: isMobile ? '700' : '500' }
+          }
+        }
       },
       interaction: { mode:'index', intersect:false },
       animation: { duration:1000, easing:'easeOutQuart' }
