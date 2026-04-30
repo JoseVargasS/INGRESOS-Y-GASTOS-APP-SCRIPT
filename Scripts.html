@@ -1749,35 +1749,133 @@ function renderSummaryTable(data) {
     tbody.innerHTML = '';
     const fragment = document.createDocumentFragment();
     
-    // Calcular fijos para las barras visuales (Data Bars)
-    let maxInc = 0, maxExp = 0, maxNet = 0;
-    yearData.forEach(r => {
-      const inc = (Number(r.freqIncome)||0) + (Number(r.nonFreqIncome)||0);
-      const exp = Math.abs(Number(r.totalExpense)||0);
-      const net = Math.abs(Number(r.netMonthly)||0);
-      if (inc > maxInc) maxInc = inc;
-      if (exp > maxExp) maxExp = exp;
-      if (net > maxNet) maxNet = net;
+    const detailRows = yearData.map(row => {
+      const freqIncome = Number(row.freqIncome) || 0;
+      const nonFreqIncome = Number(row.nonFreqIncome) || 0;
+      const freqExpense = Math.abs(Number(row.freqExpense) || 0);
+      const nonFreqExpense = Math.abs(Number(row.nonFreqExpense) || 0);
+      const totalExpense = Math.abs(Number(row.totalExpense) || 0);
+      const netMonthly = Number(row.netMonthly) || 0;
+      return {
+        row,
+        freqIncome,
+        nonFreqIncome,
+        totalIncome: freqIncome + nonFreqIncome,
+        freqExpense,
+        nonFreqExpense,
+        totalExpense,
+        netMonthly
+      };
     });
 
-    yearData.forEach(row => {
-      const expPct = maxExp ? (Math.abs(row.totalExpense) / maxExp) * 100 : 0;
-      const netPct = maxNet ? (Math.abs(row.netMonthly) / maxNet) * 100 : 0;
-      
-      const isLight = currentTheme === 'light';
-      const expGrad = isLight ? 'rgba(255,77,87,0.16)' : 'rgba(255,77,87,0.24)';
-      const netGrad = row.netMonthly >= 0 ? (isLight ? 'rgba(0,210,106,0.16)' : 'rgba(0,210,106,0.24)') : expGrad;
+    const maxBars = detailRows.reduce((max, item) => ({
+      freqIncome: Math.max(max.freqIncome, item.freqIncome),
+      nonFreqIncome: Math.max(max.nonFreqIncome, item.nonFreqIncome),
+      freqExpense: Math.max(max.freqExpense, item.freqExpense),
+      nonFreqExpense: Math.max(max.nonFreqExpense, item.nonFreqExpense),
+      totalExpense: Math.max(max.totalExpense, item.totalExpense),
+      netMonthly: Math.max(max.netMonthly, Math.abs(item.netMonthly))
+    }), { freqIncome: 0, nonFreqIncome: 0, freqExpense: 0, nonFreqExpense: 0, totalExpense: 0, netMonthly: 0 });
+
+    const pct = (value, max) => max ? Math.min(100, (Math.abs(Number(value) || 0) / max) * 100) : 0;
+    const getTop = (key) => detailRows.reduce((best, item) => !best || item[key] > best[key] ? item : best, null);
+
+    const detailStrip = document.getElementById('detailSummaryStrip');
+    if (detailStrip) {
+      const bestNet = detailRows.reduce((best, item) => !best || item.netMonthly > best.netMonthly ? item : best, null);
+      const worstNet = detailRows.reduce((worst, item) => !worst || item.netMonthly < worst.netMonthly ? item : worst, null);
+      const topIncome = getTop('totalIncome');
+      const topExpense = getTop('totalExpense');
+      const totalIncome = detailRows.reduce((sum, item) => sum + item.totalIncome, 0);
+      const totalExpense = detailRows.reduce((sum, item) => sum + item.totalExpense, 0);
+      const totalNet = detailRows.reduce((sum, item) => sum + item.netMonthly, 0);
+      const avgIncome = detailRows.length ? totalIncome / detailRows.length : 0;
+      const avgExpense = detailRows.length ? totalExpense / detailRows.length : 0;
+      const avgNet = detailRows.length ? totalNet / detailRows.length : 0;
+      const savingsRate = totalIncome > 0 ? Math.round((totalNet / totalIncome) * 100) : 0;
+      detailStrip.innerHTML = `
+        <div class="detail-mini-card detail-mini-period">
+          <span class="detail-mini-label">Periodo</span>
+          <strong>${detailRows.length} meses</strong>
+          <small class="detail-mini-note">${summarySelectedYear || 'Todos'}</small>
+        </div>
+        <div class="detail-mini-card detail-mini-income">
+          <span class="detail-mini-label">Ingreso prom.</span>
+          <strong>${formatMoney(avgIncome)}</strong>
+          <small class="detail-mini-note">por mes</small>
+        </div>
+        <div class="detail-mini-card detail-mini-expense">
+          <span class="detail-mini-label">Gasto prom.</span>
+          <strong>${formatMoney(-avgExpense)}</strong>
+          <small class="detail-mini-note">por mes</small>
+        </div>
+        <div class="detail-mini-card detail-mini-net">
+          <span class="detail-mini-label">Neto prom.</span>
+          <strong>${formatMoney(avgNet)}</strong>
+          <small class="detail-mini-note">${savingsRate}% ahorro</small>
+        </div>
+        <div class="detail-mini-card detail-mini-income">
+          <span class="detail-mini-label">Mayor ingreso</span>
+          <strong>${topIncome ? topIncome.row.monthYear : '-'}</strong>
+          <small class="detail-mini-note">${topIncome ? formatMoney(topIncome.totalIncome) : '-'}</small>
+        </div>
+        <div class="detail-mini-card detail-mini-expense">
+          <span class="detail-mini-label">Mayor gasto</span>
+          <strong>${topExpense ? topExpense.row.monthYear : '-'}</strong>
+          <small class="detail-mini-note">${topExpense ? formatMoney(-topExpense.totalExpense) : '-'}</small>
+        </div>
+        <div class="detail-mini-card detail-mini-net">
+          <span class="detail-mini-label">Mejor neto</span>
+          <strong>${bestNet ? bestNet.row.monthYear : '-'}</strong>
+          <small class="detail-mini-note">${bestNet ? formatMoney(bestNet.netMonthly) : '-'}</small>
+        </div>
+        <div class="detail-mini-card detail-mini-risk">
+          <span class="detail-mini-label">Neto más bajo</span>
+          <strong>${worstNet ? worstNet.row.monthYear : '-'}</strong>
+          <small class="detail-mini-note">${worstNet ? formatMoney(worstNet.netMonthly) : '-'}</small>
+        </div>
+      `;
+    }
+
+    let previousYear = '';
+    detailRows.forEach(item => {
+      const { row } = item;
+      const [monthName, rowYear = ''] = String(row.monthYear || '').split(' ');
+      const isYearBreak = rowYear && previousYear && rowYear !== previousYear;
+      previousYear = rowYear || previousYear;
 
       const tr = document.createElement('tr');
+      if (isYearBreak) tr.classList.add('summary-year-break');
       tr.innerHTML = `
-        <td style="font-weight:500;">${row.monthYear}</td>
-        <td class="amount-positive">${formatMoney(row.freqIncome)}</td>
-        <td class="amount-positive">${formatMoney(row.nonFreqIncome)}</td>
-        <td class="amount-negative">${formatMoney(row.freqExpense)}</td>
-        <td class="amount-negative">${formatMoney(row.nonFreqExpense)}</td>
-        <td class="amount-negative" style="background: linear-gradient(90deg, ${expGrad} ${expPct}%, transparent ${expPct}%); border-radius:4px;">${formatMoney(row.totalExpense)}</td>
-        <td class="${row.netMonthly >= 0 ? 'amount-positive' : 'amount-negative'}" style="font-weight:700; background: linear-gradient(90deg, ${netGrad} ${netPct}%, transparent ${netPct}%); border-radius:4px;">
-          ${formatMoney(row.netMonthly)}
+        <td>
+          <span class="summary-month">
+            <strong>${monthName || row.monthYear}</strong>
+            <small>${rowYear}</small>
+          </span>
+        </td>
+        <td class="amount-positive summary-data-cell summary-income-freq" style="--bar:${pct(item.freqIncome, maxBars.freqIncome).toFixed(1)}%;">
+          <span class="summary-data-bar"></span>
+          <span class="summary-data-value">${formatMoney(row.freqIncome)}</span>
+        </td>
+        <td class="amount-positive summary-data-cell summary-income-extra" style="--bar:${pct(item.nonFreqIncome, maxBars.nonFreqIncome).toFixed(1)}%;">
+          <span class="summary-data-bar"></span>
+          <span class="summary-data-value">${formatMoney(row.nonFreqIncome)}</span>
+        </td>
+        <td class="amount-negative summary-data-cell summary-expense-freq" style="--bar:${pct(item.freqExpense, maxBars.freqExpense).toFixed(1)}%;">
+          <span class="summary-data-bar"></span>
+          <span class="summary-data-value">${formatMoney(row.freqExpense)}</span>
+        </td>
+        <td class="amount-negative summary-data-cell summary-expense-extra" style="--bar:${pct(item.nonFreqExpense, maxBars.nonFreqExpense).toFixed(1)}%;">
+          <span class="summary-data-bar"></span>
+          <span class="summary-data-value">${formatMoney(row.nonFreqExpense)}</span>
+        </td>
+        <td class="amount-negative summary-data-cell summary-expense-total" style="--bar:${pct(item.totalExpense, maxBars.totalExpense).toFixed(1)}%;">
+          <span class="summary-data-bar"></span>
+          <span class="summary-data-value">${formatMoney(row.totalExpense)}</span>
+        </td>
+        <td class="${item.netMonthly >= 0 ? 'amount-positive' : 'amount-negative'} summary-data-cell ${item.netMonthly >= 0 ? 'summary-net-positive' : 'summary-net-negative'}" style="--bar:${pct(item.netMonthly, maxBars.netMonthly).toFixed(1)}%;">
+          <span class="summary-data-bar"></span>
+          <span class="summary-data-value">${formatMoney(row.netMonthly)}</span>
         </td>
       `;
       fragment.appendChild(tr);

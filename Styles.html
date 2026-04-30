@@ -1879,7 +1879,74 @@
 
   /* Summary table section */
   .summary-table-section {
-    margin-top: 8px;
+    width: min(100%, 1260px);
+    margin: 8px auto 0;
+  }
+
+  .detail-summary-strip {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(150px, 1fr));
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+
+  .detail-mini-card {
+    min-height: 58px;
+    padding: 12px 14px;
+    border: 1px solid rgba(67, 81, 75, 0.7);
+    border-radius: 14px;
+    background:
+      linear-gradient(135deg, rgba(45, 156, 219, 0.08), transparent 45%),
+      rgba(255, 255, 255, 0.025);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+  }
+
+  .detail-mini-card.detail-mini-income {
+    border-left: 3px solid rgba(0, 210, 106, 0.75);
+  }
+
+  .detail-mini-card.detail-mini-expense,
+  .detail-mini-card.detail-mini-risk {
+    border-left: 3px solid rgba(255, 77, 87, 0.75);
+  }
+
+  .detail-mini-card.detail-mini-net,
+  .detail-mini-card.detail-mini-period {
+    border-left: 3px solid rgba(45, 156, 219, 0.75);
+  }
+
+  .detail-mini-label {
+    color: var(--text-muted);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+  }
+
+  .detail-mini-card strong {
+    color: var(--text-primary);
+    font-size: 14px;
+    line-height: 1.15;
+  }
+
+  .detail-mini-note {
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 1.1;
+  }
+
+  .summary-table-container {
+    width: 100%;
+    border-radius: 18px;
+    padding: 8px;
+    background:
+      linear-gradient(180deg, rgba(45, 156, 219, 0.06), transparent 34%),
+      var(--bg-card) !important;
+    box-shadow: var(--shadow-sm);
   }
 
   .summary-table-header {
@@ -1908,6 +1975,188 @@
     text-align: center;
   }
 
+  .summary-table {
+    min-width: 920px;
+    border-spacing: 0 6px;
+  }
+
+  .summary-table th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    padding: 11px 14px;
+    background: rgba(18, 28, 25, 0.92);
+    backdrop-filter: blur(12px);
+    border-bottom: 0;
+    font-size: 12px;
+    letter-spacing: 0.7px;
+  }
+
+  .summary-table th:first-child {
+    border-radius: 12px 0 0 12px;
+  }
+
+  .summary-table th:last-child {
+    border-radius: 0 12px 12px 0;
+  }
+
+  .summary-table tbody tr {
+    transition: transform var(--transition-fast), filter var(--transition-fast);
+  }
+
+  .summary-table tbody tr:hover {
+    transform: translateY(-1px);
+    filter: brightness(1.08);
+  }
+
+  .summary-table tbody tr:hover td {
+    background: rgba(255, 255, 255, 0.035) !important;
+  }
+
+  .summary-table td {
+    padding: 9px 14px;
+    border-bottom: 1px solid rgba(67, 81, 75, 0.55);
+    background: rgba(255, 255, 255, 0.018);
+    font-size: 15px;
+    font-weight: 800;
+  }
+
+  .summary-table td:first-child {
+    border-radius: 12px 0 0 12px;
+    border-left: 1px solid rgba(67, 81, 75, 0.55);
+  }
+
+  .summary-table td:last-child {
+    border-radius: 0 12px 12px 0;
+    border-right: 1px solid rgba(67, 81, 75, 0.55);
+  }
+
+  .summary-year-break td {
+    border-top: 1px solid rgba(45, 156, 219, 0.45);
+  }
+
+  .summary-month {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 126px;
+  }
+
+  .summary-month strong {
+    color: var(--text-primary);
+    font-size: 16px;
+  }
+
+  .summary-month small {
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 900;
+  }
+
+  .summary-data-cell {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+  }
+
+  .summary-data-bar {
+    position: absolute;
+    inset: 9px auto 9px 6px;
+    width: var(--bar);
+    max-width: calc(100% - 10px);
+    border-radius: 4px;
+    z-index: 0;
+  }
+
+  .summary-income-freq .summary-data-bar {
+    background: rgba(0, 210, 106, 0.24);
+  }
+
+  .summary-income-extra .summary-data-bar {
+    background: rgba(45, 156, 219, 0.24);
+  }
+
+  .summary-expense-freq .summary-data-bar {
+    background: rgba(255, 77, 87, 0.24);
+  }
+
+  .summary-expense-extra .summary-data-bar {
+    background: rgba(255, 193, 69, 0.26);
+  }
+
+  .summary-expense-total .summary-data-bar {
+    background: rgba(255, 77, 87, 0.30);
+  }
+
+  .summary-net-positive .summary-data-bar {
+    background: rgba(0, 210, 106, 0.30);
+  }
+
+  .summary-net-negative .summary-data-bar {
+    background: rgba(255, 77, 87, 0.30);
+  }
+
+  .summary-data-value {
+    position: relative;
+    z-index: 1;
+  }
+
+  [data-theme="light"] .detail-mini-card {
+    background:
+      linear-gradient(135deg, rgba(45, 156, 219, 0.09), transparent 45%),
+      rgba(255, 255, 255, 0.82);
+    border-color: rgba(154, 171, 144, 0.65);
+  }
+
+  [data-theme="light"] .summary-table-container {
+    background:
+      linear-gradient(180deg, rgba(45, 156, 219, 0.07), transparent 34%),
+      #ffffff !important;
+  }
+
+  [data-theme="light"] .summary-table th {
+    background: rgba(224, 234, 215, 0.92);
+  }
+
+  [data-theme="light"] .summary-table td {
+    background: rgba(245, 249, 240, 0.72);
+    border-color: rgba(200, 212, 192, 0.8);
+  }
+
+  [data-theme="light"] .summary-table tbody tr:hover td {
+    background: rgba(255, 255, 255, 0.9) !important;
+  }
+
+  [data-theme="light"] .summary-table td:first-child {
+    border-left-color: rgba(200, 212, 192, 0.8);
+  }
+
+  [data-theme="light"] .summary-table td:last-child {
+    border-right-color: rgba(200, 212, 192, 0.8);
+  }
+
+  [data-theme="light"] .summary-income-freq .summary-data-bar {
+    background: rgba(0, 161, 4, 0.18);
+  }
+
+  [data-theme="light"] .summary-income-extra .summary-data-bar {
+    background: rgba(45, 156, 219, 0.18);
+  }
+
+  [data-theme="light"] .summary-expense-freq .summary-data-bar,
+  [data-theme="light"] .summary-expense-total .summary-data-bar,
+  [data-theme="light"] .summary-net-negative .summary-data-bar {
+    background: rgba(255, 77, 87, 0.18);
+  }
+
+  [data-theme="light"] .summary-expense-extra .summary-data-bar {
+    background: rgba(217, 154, 0, 0.20);
+  }
+
+  [data-theme="light"] .summary-net-positive .summary-data-bar {
+    background: rgba(0, 161, 4, 0.20);
+  }
+
   .summary-table th:first-child,
   .summary-table td:first-child {
     text-align: left;
@@ -1928,7 +2177,19 @@
     }
 
     .summary-table {
-      min-width: unset;
+      min-width: 760px;
+    }
+
+    .summary-table-section {
+      width: 100%;
+    }
+
+    .detail-summary-strip {
+      grid-template-columns: 1fr;
+    }
+
+    .summary-table-container {
+      padding: 6px;
     }
 
     .dash-kpi-value {
