@@ -1,160 +1,358 @@
 <script>
-// ============================================
-// BUCKS MANAGER - SCRIPTS MEJORADOS
-// ============================================
+  // ============================================
+  // BUCKS MANAGER - SCRIPTS MEJORADOS
+  // ============================================
 
-// Global State
-let currentTheme = localStorage.getItem('bucks_theme') || 'dark';
-const currentYearDefault = new Date().getFullYear();
-var currentYear = currentYearDefault;
-var currentMonth = 0;
-var transactionCache = [];
-var summaries = [];
-var currentSort = { col: 'date', order: 'desc' };
-var deleteRowId = null;
-var myChart = null;
-var isSearchActive = false;
-var searchResults = [];
+  // Global State
+  let currentTheme = localStorage.getItem("bucks_theme") || "dark";
+  const currentYearDefault = new Date().getFullYear();
+  var currentYear = currentYearDefault;
+  var currentMonth = 0;
+  var transactionCache = [];
+  var summaries = [];
+  var currentSort = { col: "date", order: "desc" };
+  var deleteRowId = null;
+  var myChart = null;
+  var isSearchActive = false;
+  var searchResults = [];
 
-var lastDeletedTransaction = null;
-var undoTimeout = null;
-var currentChartMetric = 'comparison';
-var chartPluginsRegistered = false;
-var resizeRenderTimer = null;
+  var lastDeletedTransaction = null;
+  var undoTimeout = null;
+  var currentChartMetric = "comparison";
+  var chartPluginsRegistered = false;
+  var resizeRenderTimer = null;
 
-const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+  function isChartBarDataset(chart, dataset) {
+    return (
+      dataset.type === "bar" || (!dataset.type && chart.config.type === "bar")
+    );
+  }
 
-// DOM Elements
-const tabButtons = document.querySelectorAll('.nav-item');
-const contentViews = document.querySelectorAll('.content-view');
-const fabAdd = document.getElementById('fabAdd');
-const fabUndo = document.getElementById('fabUndo');
-const addModal = document.getElementById('addModal');
-const deleteModal = document.getElementById('deleteModal');
-const closeModal = document.getElementById('closeModal');
-const btnCancel = document.getElementById('btnCancel');
-const btnCancelDelete = document.getElementById('btnCancelDelete');
-const btnConfirmDelete = document.getElementById('btnConfirmDelete');
-const addForm = document.getElementById('addForm');
-const inputAmount = document.getElementById('inputAmount');
-const inputType = document.getElementById('inputType');
+  function getChartLabelLane(chart, datasetIndex) {
+    const barIndexes = chart.data.datasets
+      .map((dataset, index) => ({ dataset, index }))
+      .filter(
+        ({ dataset, index }) =>
+          isChartBarDataset(chart, dataset) &&
+          !chart.getDatasetMeta(index).hidden,
+      )
+      .map(({ index }) => index);
+    const laneIndex = Math.max(0, barIndexes.indexOf(datasetIndex));
+    const center = (barIndexes.length - 1) / 2;
 
-// Freq Income Modal Elements
-const freqIncomeModal = document.getElementById('freqIncomeModal');
-const closeFreqIncomeModal = document.getElementById('closeFreqIncomeModal');
-const btnCancelFreqIncome = document.getElementById('btnCancelFreqIncome');
-const freqIncomeForm = document.getElementById('freqIncomeForm');
-const inputFreqIncomeAmount = document.getElementById('inputFreqIncomeAmount');
-const btnEditFreqIncome = document.getElementById('btnEditFreqIncome');
-const freqIncomeMonthLabel = document.getElementById('freqIncomeMonthLabel');
+    return {
+      offset: 10 + laneIndex * 9,
+      xShift: (laneIndex - center) * 12,
+    };
+  }
 
-// Navigation
-const prevMonthBtn = document.getElementById('prevMonthBtn');
-const nextMonthBtn = document.getElementById('nextMonthBtn');
-const currentMonthDisplay = document.getElementById('currentMonthDisplay');
-const goToCurrentMonthBtn = document.getElementById('goToCurrentMonthBtn');
-const yearSelect = document.getElementById('yearSelect');
-const quickMonthChips = document.querySelectorAll('.month-chip');
+  const chartLabelGuidePlugin = {
+    id: "chartLabelGuidePlugin",
+    afterDatasetsDraw(chart, args, opts) {
+      if (!opts || !opts.enabled) return;
+      const { ctx } = chart;
+      const color = opts.color || "rgba(255,255,255,0.45)";
+      const labelBg = opts.labelBg || "rgba(2,4,3,0.78)";
+      const labelBorder = opts.labelBorder || "rgba(255,255,255,0.10)";
+      const labelColor = opts.labelColor || "#f7f8f4";
+      const paddingX = 5;
+      const placed = [];
 
-// Mobile Navigation
-const yearSelectMobile = document.getElementById('yearSelectMobile');
-const prevMonthBtnMobile = document.getElementById('prevMonthBtnMobile');
-const nextMonthBtnMobile = document.getElementById('nextMonthBtnMobile');
-const currentMonthDisplayMobile = document.getElementById('currentMonthDisplayMobile');
-const goToCurrentMonthBtnMobile = document.getElementById('goToCurrentMonthBtnMobile');
+      function roundRect(x, y, w, h, r) {
+        const radius = Math.min(r, w / 2, h / 2);
+        ctx.beginPath();
+        ctx.moveTo(x + radius, y);
+        ctx.lineTo(x + w - radius, y);
+        ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+        ctx.lineTo(x + w, y + h - radius);
+        ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+        ctx.lineTo(x + radius, y + h);
+        ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+        ctx.lineTo(x, y + radius);
+        ctx.quadraticCurveTo(x, y, x + radius, y);
+        ctx.closePath();
+      }
 
-// Sidebar
-const sidebarToggle = document.getElementById('sidebarToggle');
-const appSidebar = document.getElementById('appSidebar');
-const sidebarOverlay = document.getElementById('sidebarOverlay');
+      function intersects(a, b) {
+        return (
+          a.x < b.x + b.w &&
+          a.x + a.w > b.x &&
+          a.y < b.y + b.h &&
+          a.y + a.h > b.y
+        );
+      }
 
-function registerChartPluginsOnce() {
-  if (chartPluginsRegistered || typeof Chart === 'undefined' || typeof ChartDataLabels === 'undefined') return;
-  chartPluginsRegistered = true;
-  Chart.register(ChartDataLabels);
-}
+      ctx.save();
+      ctx.font = opts.font || "550 11px Segoe UI, Arial, sans-serif";
+      ctx.textBaseline = "middle";
 
-// ============================================
-// SKELETON LOADERS
-// ============================================
-const TABLE_SKELETON_WIDTHS = ['116px', '112px', '100%', '148px', '92px'];
-const SUMMARY_SKELETON_WIDTHS = ['128px', '104px', '104px', '104px', '104px', '118px', '118px'];
+      chart.data.datasets.forEach((dataset, datasetIndex) => {
+        const meta = chart.getDatasetMeta(datasetIndex);
+        if (!meta || meta.hidden) return;
+        if (!isChartBarDataset(chart, dataset)) return;
 
-function buildSkeletonRows(rows, widths, className = '') {
-  return Array.from({ length: rows }, () => `
+        meta.data.forEach((element, dataIndex) => {
+          const rawValue = Number(dataset.data[dataIndex]) || 0;
+          if (!rawValue) return;
+
+          const point = element.tooltipPosition
+            ? element.tooltipPosition()
+            : element.getProps(["x", "y"], true);
+          const props = element.getProps(["x", "y", "base"], true);
+          const startX = props.x || point.x;
+          const startY = props.y || point.y;
+          const direction = rawValue >= 0 ? -1 : 1;
+          const lane = getChartLabelLane(chart, datasetIndex);
+          const text = `${rawValue < 0 ? "-" : ""}S/${Math.abs(rawValue).toFixed(0)}`;
+          const textW = ctx.measureText(text).width;
+          const boxW = textW + paddingX * 2;
+          const boxH = 18;
+          let boxX = startX - boxW / 2 + lane.xShift;
+          let boxY = startY + direction * lane.offset - boxH / 2;
+          const minX = chart.chartArea.left + 2;
+          const maxX = chart.chartArea.right - boxW - 2;
+          const minY = chart.chartArea.top + 2;
+          const maxY = chart.chartArea.bottom - boxH - 2;
+          boxX = Math.max(minX, Math.min(maxX, boxX));
+          boxY = Math.max(minY, Math.min(maxY, boxY));
+
+          let box = { x: boxX, y: boxY, w: boxW, h: boxH };
+          let guard = 0;
+          while (placed.some((prev) => intersects(box, prev)) && guard < 12) {
+            const nextY = Math.max(
+              minY,
+              Math.min(maxY, box.y + direction * (boxH + 2)),
+            );
+            if (nextY === box.y) {
+              const side = guard % 2 === 0 ? 1 : -1;
+              box.x = Math.max(minX, Math.min(maxX, box.x + side * (boxW + 6)));
+            } else {
+              box.y = nextY;
+            }
+            guard++;
+          }
+          placed.push(box);
+
+          const boxCenterY = box.y + box.h / 2;
+          const boxEdgeX = startX <= box.x + box.w / 2 ? box.x : box.x + box.w;
+          const elbowY = startY + direction * (opts.elbowLength || 6);
+
+          ctx.beginPath();
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 1;
+          ctx.setLineDash([]);
+          ctx.moveTo(startX, startY);
+          ctx.lineTo(startX, elbowY);
+          ctx.lineTo(boxEdgeX, boxCenterY);
+          ctx.stroke();
+
+          roundRect(box.x, box.y, box.w, box.h, 3);
+          ctx.fillStyle = labelBg;
+          ctx.fill();
+          ctx.strokeStyle = labelBorder;
+          ctx.stroke();
+          ctx.fillStyle = labelColor;
+          ctx.fillText(text, box.x + paddingX, boxCenterY);
+        });
+      });
+
+      ctx.restore();
+    },
+  };
+
+  const monthNames = [
+    "Enero",
+    "Febrero",
+    "Marzo",
+    "Abril",
+    "Mayo",
+    "Junio",
+    "Julio",
+    "Agosto",
+    "Septiembre",
+    "Octubre",
+    "Noviembre",
+    "Diciembre",
+  ];
+
+  // DOM Elements
+  const tabButtons = document.querySelectorAll(".nav-item");
+  const contentViews = document.querySelectorAll(".content-view");
+  const fabAdd = document.getElementById("fabAdd");
+  const fabUndo = document.getElementById("fabUndo");
+  const addModal = document.getElementById("addModal");
+  const deleteModal = document.getElementById("deleteModal");
+  const closeModal = document.getElementById("closeModal");
+  const btnCancel = document.getElementById("btnCancel");
+  const btnCancelDelete = document.getElementById("btnCancelDelete");
+  const btnConfirmDelete = document.getElementById("btnConfirmDelete");
+  const addForm = document.getElementById("addForm");
+  const inputAmount = document.getElementById("inputAmount");
+  const inputType = document.getElementById("inputType");
+
+  // Freq Income Modal Elements
+  const freqIncomeModal = document.getElementById("freqIncomeModal");
+  const closeFreqIncomeModal = document.getElementById("closeFreqIncomeModal");
+  const btnCancelFreqIncome = document.getElementById("btnCancelFreqIncome");
+  const freqIncomeForm = document.getElementById("freqIncomeForm");
+  const inputFreqIncomeAmount = document.getElementById(
+    "inputFreqIncomeAmount",
+  );
+  const btnEditFreqIncome = document.getElementById("btnEditFreqIncome");
+  const freqIncomeMonthLabel = document.getElementById("freqIncomeMonthLabel");
+
+  // Navigation
+  const prevMonthBtn = document.getElementById("prevMonthBtn");
+  const nextMonthBtn = document.getElementById("nextMonthBtn");
+  const currentMonthDisplay = document.getElementById("currentMonthDisplay");
+  const goToCurrentMonthBtn = document.getElementById("goToCurrentMonthBtn");
+  const yearSelect = document.getElementById("yearSelect");
+  const quickMonthChips = document.querySelectorAll(".month-chip");
+
+  // Mobile Navigation
+  const yearSelectMobile = document.getElementById("yearSelectMobile");
+  const prevMonthBtnMobile = document.getElementById("prevMonthBtnMobile");
+  const nextMonthBtnMobile = document.getElementById("nextMonthBtnMobile");
+  const currentMonthDisplayMobile = document.getElementById(
+    "currentMonthDisplayMobile",
+  );
+  const goToCurrentMonthBtnMobile = document.getElementById(
+    "goToCurrentMonthBtnMobile",
+  );
+
+  // Sidebar
+  const sidebarToggle = document.getElementById("sidebarToggle");
+  const appSidebar = document.getElementById("appSidebar");
+  const sidebarOverlay = document.getElementById("sidebarOverlay");
+
+  function registerChartPluginsOnce() {
+    if (
+      chartPluginsRegistered ||
+      typeof Chart === "undefined" ||
+      typeof ChartDataLabels === "undefined"
+    )
+      return;
+    chartPluginsRegistered = true;
+    Chart.register(chartLabelGuidePlugin, ChartDataLabels);
+  }
+
+  // ============================================
+  // SKELETON LOADERS
+  // ============================================
+  const TABLE_SKELETON_WIDTHS = ["116px", "112px", "100%", "148px", "92px"];
+  const SUMMARY_SKELETON_WIDTHS = [
+    "128px",
+    "104px",
+    "104px",
+    "104px",
+    "104px",
+    "118px",
+    "118px",
+  ];
+
+  function buildSkeletonRows(rows, widths, className = "") {
+    return Array.from(
+      { length: rows },
+      () => `
     <tr class="skeleton-tr ${className}">
-      ${widths.map(width => `
+      ${widths
+        .map(
+          (width) => `
         <td>
           <div class="shimmer skeleton-row" style="--skeleton-width:${width};"></div>
         </td>
-      `).join('')}
+      `,
+        )
+        .join("")}
     </tr>
-  `).join('');
-}
-
-function setValueSkeleton(ids, className = 'skeleton-text') {
-  ids.forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.innerHTML = `<div class="shimmer ${className}"></div>`;
-  });
-}
-
-function showTableSkeleton(rows = 8) {
-  const tbody = document.getElementById('transactionsTableBody');
-  if (!tbody) return;
-
-  tbody.innerHTML = buildSkeletonRows(rows, TABLE_SKELETON_WIDTHS, 'transaction-skeleton-row');
-  setValueSkeleton(['statFreqIncome', 'statNoFreqIncome', 'statFreqExpense', 'statNoFreqExpense', 'statTotalExpense', 'statBalance'], 'skeleton-stat-value');
-}
-
-function showSummarySkeleton() {
-  setValueSkeleton(['kpiTotalIncome', 'kpiTotalExpense', 'kpiNetBalance', 'kpiSavingsRate'], 'skeleton-kpi-value');
-
-  const tbody = document.getElementById('summaryTableBody');
-  if (tbody) {
-    tbody.innerHTML = buildSkeletonRows(12, SUMMARY_SKELETON_WIDTHS, 'summary-skeleton-row');
+  `,
+    ).join("");
   }
-}
 
-// ============================================
-// INICIALIZACIÓN
-// ============================================
-document.addEventListener('DOMContentLoaded', function() {
-  initTheme();
-  const now = new Date();
-  currentYear = now.getFullYear();
-  currentMonth = now.getMonth();
-  
-  updateYearUI(currentYear);
-  if(yearSelectMobile) yearSelectMobile.value = currentYear;
-  
-  updateHeaderDate();
-  loadTransactions();
-  loadSummary();
-  setupEventListeners();
-});
+  function setValueSkeleton(ids, className = "skeleton-text") {
+    ids.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = `<div class="shimmer ${className}"></div>`;
+    });
+  }
 
-// ============================================
-// TOAST NOTIFICATIONS
-// ============================================
-function showToast(message, type = 'info', title = '') {
-  const container = document.getElementById('toastContainer');
-  
-  const icons = {
-    success: 'fa-check-circle',
-    error: 'fa-exclamation-circle',
-    info: 'fa-info-circle'
-  };
-  
-  const titles = {
-    success: title || 'Éxito',
-    error: title || 'Error',
-    info: title || 'Información'
-  };
-  
-  const toast = document.createElement('div');
-  toast.className = `toast toast-${type}`;
-  toast.innerHTML = `
+  function showTableSkeleton(rows = 8) {
+    const tbody = document.getElementById("transactionsTableBody");
+    if (!tbody) return;
+
+    tbody.innerHTML = buildSkeletonRows(
+      rows,
+      TABLE_SKELETON_WIDTHS,
+      "transaction-skeleton-row",
+    );
+    setValueSkeleton(
+      [
+        "statFreqIncome",
+        "statNoFreqIncome",
+        "statFreqExpense",
+        "statNoFreqExpense",
+        "statTotalExpense",
+        "statBalance",
+      ],
+      "skeleton-stat-value",
+    );
+  }
+
+  function showSummarySkeleton() {
+    setValueSkeleton(
+      ["kpiTotalIncome", "kpiTotalExpense", "kpiNetBalance", "kpiSavingsRate"],
+      "skeleton-kpi-value",
+    );
+
+    const tbody = document.getElementById("summaryTableBody");
+    if (tbody) {
+      tbody.innerHTML = buildSkeletonRows(
+        12,
+        SUMMARY_SKELETON_WIDTHS,
+        "summary-skeleton-row",
+      );
+    }
+  }
+
+  // ============================================
+  // INICIALIZACIÓN
+  // ============================================
+  document.addEventListener("DOMContentLoaded", function () {
+    initTheme();
+    const now = new Date();
+    currentYear = now.getFullYear();
+    currentMonth = now.getMonth();
+
+    updateYearUI(currentYear);
+    if (yearSelectMobile) yearSelectMobile.value = currentYear;
+
+    updateHeaderDate();
+    loadTransactions();
+    loadSummary();
+    setupEventListeners();
+  });
+
+  // ============================================
+  // TOAST NOTIFICATIONS
+  // ============================================
+  function showToast(message, type = "info", title = "") {
+    const container = document.getElementById("toastContainer");
+
+    const icons = {
+      success: "fa-check-circle",
+      error: "fa-exclamation-circle",
+      info: "fa-info-circle",
+    };
+
+    const titles = {
+      success: title || "Éxito",
+      error: title || "Error",
+      info: title || "Información",
+    };
+
+    const toast = document.createElement("div");
+    toast.className = `toast toast-${type}`;
+    toast.innerHTML = `
     <div class="toast-icon">
       <i class="fa-solid ${icons[type]}"></i>
     </div>
@@ -166,787 +364,853 @@ function showToast(message, type = 'info', title = '') {
       <i class="fa-solid fa-times"></i>
     </button>
   `;
-  
-  container.appendChild(toast);
-  
-  // Auto-remove after 4 seconds
-  setTimeout(() => {
-    toast.classList.add('hiding');
-    setTimeout(() => toast.remove(), 300);
-  }, 4000);
-}
 
-// ============================================
-// EVENT LISTENERS
-// ============================================
-function setupEventListeners() {
-  // Sidebar Mobile Toggle
-  sidebarToggle.addEventListener('click', () => {
-    appSidebar.classList.add('open');
-    sidebarOverlay.classList.remove('hidden');
-  });
-  
-  sidebarOverlay.addEventListener('click', () => {
-    appSidebar.classList.remove('open');
-    sidebarOverlay.classList.add('hidden');
-  });
+    container.appendChild(toast);
 
-  // Navigation
-  prevMonthBtn.addEventListener('click', () => {
-    if (isSearchActive) exitSearchMode();
-    changeMonth(-1);
-  });
-  nextMonthBtn.addEventListener('click', () => {
-    if (isSearchActive) exitSearchMode();
-    changeMonth(1);
-  });
-  
-  goToCurrentMonthBtn.addEventListener('click', () => {
-    const now = new Date();
-    currentYear = now.getFullYear();
-    currentMonth = now.getMonth();
-    updateYearUI(currentYear);
-    if(yearSelectMobile) yearSelectMobile.value = currentYear;
-    
-    updateHeaderDate();
-    loadTransactions();
-    showToast(`Navegando a ${monthNames[currentMonth]} ${currentYear}`, 'info');
-    document.querySelector('[data-tab="expenses"]').click();
-  });
-  
-  // Custom Year Dropdown Setup
-  setupYearDropdown();
-  
-  // Mobile Year Select Listener
-  if (yearSelectMobile) {
-    yearSelectMobile.addEventListener('change', () => {
-      currentYear = parseInt(yearSelectMobile.value);
-      updateYearUI(currentYear);
-      updateHeaderDate();
-      loadTransactions();
-    });
+    // Auto-remove after 4 seconds
+    setTimeout(() => {
+      toast.classList.add("hiding");
+      setTimeout(() => toast.remove(), 300);
+    }, 4000);
   }
 
-  if (prevMonthBtnMobile) prevMonthBtnMobile.addEventListener('click', () => changeMonth(-1));
-  if (nextMonthBtnMobile) nextMonthBtnMobile.addEventListener('click', () => changeMonth(1));
-  
-  if (goToCurrentMonthBtnMobile) {
-    goToCurrentMonthBtnMobile.addEventListener('click', () => {
+  // ============================================
+  // EVENT LISTENERS
+  // ============================================
+  function setupEventListeners() {
+    // Sidebar Mobile Toggle
+    sidebarToggle.addEventListener("click", () => {
+      appSidebar.classList.add("open");
+      sidebarOverlay.classList.remove("hidden");
+    });
+
+    sidebarOverlay.addEventListener("click", () => {
+      appSidebar.classList.remove("open");
+      sidebarOverlay.classList.add("hidden");
+    });
+
+    // Navigation
+    prevMonthBtn.addEventListener("click", () => {
       if (isSearchActive) exitSearchMode();
+      changeMonth(-1);
+    });
+    nextMonthBtn.addEventListener("click", () => {
+      if (isSearchActive) exitSearchMode();
+      changeMonth(1);
+    });
+
+    goToCurrentMonthBtn.addEventListener("click", () => {
       const now = new Date();
       currentYear = now.getFullYear();
       currentMonth = now.getMonth();
-      
       updateYearUI(currentYear);
-      if(yearSelectMobile) yearSelectMobile.value = currentYear;
+      if (yearSelectMobile) yearSelectMobile.value = currentYear;
 
       updateHeaderDate();
       loadTransactions();
+      showToast(
+        `Navegando a ${monthNames[currentMonth]} ${currentYear}`,
+        "info",
+      );
       document.querySelector('[data-tab="expenses"]').click();
     });
-  }
-  
-  // Quick Months
-  quickMonthChips.forEach(chip => {
-    chip.addEventListener('click', () => {
-      currentMonth = parseInt(chip.getAttribute('data-month'));
-      updateHeaderDate();
-      loadTransactions();
-      
-      // Close sidebar on mobile
-      if (window.innerWidth <= 768) {
-        appSidebar.classList.remove('open');
-        sidebarOverlay.classList.add('hidden');
-      }
-      
-      // Navigate down to expenses tab
-      const expenseTab = document.querySelector('.nav-item[data-tab="expenses"]');
-      if (expenseTab) {
-         expenseTab.click();
-      } else {
-         const fallback = document.querySelector('[data-tab="expenses"]');
-         if (fallback) fallback.click();
-      }
-    });
-  });
 
-  // Tabs
-  tabButtons.forEach(btn => {
-    btn.addEventListener('click', () => {
-      tabButtons.forEach(b => b.classList.remove('active'));
-      contentViews.forEach(v => v.classList.remove('active'));
-      
-      btn.classList.add('active');
-      const tabName = btn.getAttribute('data-tab');
-      document.getElementById('view-' + tabName).classList.add('active');
-      
-      // Update page title
-      const titles = {
-        'expenses': 'Tabla de Gastos',
-        'summary': 'Análisis'
-      };
-      document.getElementById('pageTitle').textContent = titles[tabName];
-      const subtitleEl = document.getElementById('pageSubtitle');
-      if (tabName === 'expenses') {
-        subtitleEl.style.display = 'block';
-      } else {
-        subtitleEl.style.display = 'none';
-      }
-      
-      const mobileControls = document.querySelector('.mobile-controls');
-      if (tabName === 'summary') {
-        setTimeout(() => renderSummaryTable(summaries), 100);
-        if (mobileControls) mobileControls.classList.add('hidden-nav');
-      } else {
-        // Mostrar controles de navegación solo en la pestaña expenses en móvil
-        if (mobileControls) {
-          if (tabName === 'expenses') {
-            mobileControls.classList.remove('hidden-nav');
-          } else {
-            mobileControls.classList.add('hidden-nav');
+    // Custom Year Dropdown Setup
+    setupYearDropdown();
+
+    // Mobile Year Select Listener
+    if (yearSelectMobile) {
+      yearSelectMobile.addEventListener("change", () => {
+        currentYear = parseInt(yearSelectMobile.value);
+        updateYearUI(currentYear);
+        updateHeaderDate();
+        loadTransactions();
+      });
+    }
+
+    if (prevMonthBtnMobile)
+      prevMonthBtnMobile.addEventListener("click", () => changeMonth(-1));
+    if (nextMonthBtnMobile)
+      nextMonthBtnMobile.addEventListener("click", () => changeMonth(1));
+
+    if (goToCurrentMonthBtnMobile) {
+      goToCurrentMonthBtnMobile.addEventListener("click", () => {
+        if (isSearchActive) exitSearchMode();
+        const now = new Date();
+        currentYear = now.getFullYear();
+        currentMonth = now.getMonth();
+
+        updateYearUI(currentYear);
+        if (yearSelectMobile) yearSelectMobile.value = currentYear;
+
+        updateHeaderDate();
+        loadTransactions();
+        document.querySelector('[data-tab="expenses"]').click();
+      });
+    }
+
+    // Quick Months
+    quickMonthChips.forEach((chip) => {
+      chip.addEventListener("click", () => {
+        currentMonth = parseInt(chip.getAttribute("data-month"));
+        updateHeaderDate();
+        loadTransactions();
+
+        // Close sidebar on mobile
+        if (window.innerWidth <= 768) {
+          appSidebar.classList.remove("open");
+          sidebarOverlay.classList.add("hidden");
+        }
+
+        // Navigate down to expenses tab
+        const expenseTab = document.querySelector(
+          '.nav-item[data-tab="expenses"]',
+        );
+        if (expenseTab) {
+          expenseTab.click();
+        } else {
+          const fallback = document.querySelector('[data-tab="expenses"]');
+          if (fallback) fallback.click();
+        }
+      });
+    });
+
+    // Tabs
+    tabButtons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        tabButtons.forEach((b) => b.classList.remove("active"));
+        contentViews.forEach((v) => v.classList.remove("active"));
+
+        btn.classList.add("active");
+        const tabName = btn.getAttribute("data-tab");
+        document.getElementById("view-" + tabName).classList.add("active");
+
+        // Update page title
+        const titles = {
+          expenses: "Tabla de Gastos",
+          summary: "Análisis",
+        };
+        document.getElementById("pageTitle").textContent = titles[tabName];
+        const subtitleEl = document.getElementById("pageSubtitle");
+        if (tabName === "expenses") {
+          subtitleEl.style.display = "block";
+        } else {
+          subtitleEl.style.display = "none";
+        }
+
+        const mobileControls = document.querySelector(".mobile-controls");
+        if (tabName === "summary") {
+          setTimeout(() => renderSummaryTable(summaries), 100);
+          if (mobileControls) mobileControls.classList.add("hidden-nav");
+        } else {
+          // Mostrar controles de navegación solo en la pestaña expenses en móvil
+          if (mobileControls) {
+            if (tabName === "expenses") {
+              mobileControls.classList.remove("hidden-nav");
+            } else {
+              mobileControls.classList.add("hidden-nav");
+            }
           }
         }
-      }
-      
-      // Close sidebar automatically on mobile
-      if (!sidebarOverlay.classList.contains('hidden')) {
-        appSidebar.classList.remove('open');
-        sidebarOverlay.classList.add('hidden');
-      }
+
+        // Close sidebar automatically on mobile
+        if (!sidebarOverlay.classList.contains("hidden")) {
+          appSidebar.classList.remove("open");
+          sidebarOverlay.classList.add("hidden");
+        }
+      });
     });
-  });
 
-  // Setup Theme Toggle Listener
-  const themeToggleParamBtn = document.getElementById('themeToggleBtn');
-  if (themeToggleParamBtn) {
-    themeToggleParamBtn.addEventListener('click', toggleTheme);
-  }
-  
-  // Sorting Headers
-  document.querySelectorAll('th[data-sort]').forEach(th => {
-    th.addEventListener('click', () => {
-      const col = th.getAttribute('data-sort');
-      if (currentSort.col === col) {
-        currentSort.order = currentSort.order === 'desc' ? 'asc' : 'desc';
-      } else {
-        currentSort.col = col;
-        currentSort.order = 'desc';
-      }
-      sortAndRender();
-    });
-  });
-
-  // Modal
-  fabAdd.addEventListener('click', () => openModal());
-
-  const hideModal = () => {
-    addModal.classList.add('hidden');
-    setTimeout(() => addForm.reset(), 300);
-  };
-  
-  closeModal.addEventListener('click', hideModal);
-  btnCancel.addEventListener('click', hideModal);
-  
-  // Delete Modal
-  btnCancelDelete.addEventListener('click', () => {
-    deleteModal.classList.add('hidden');
-    deleteRowId = null;
-  });
-  
-  btnConfirmDelete.addEventListener('click', () => {
-    if (deleteRowId) {
-      confirmDelete(deleteRowId);
+    // Setup Theme Toggle Listener
+    const themeToggleParamBtn = document.getElementById("themeToggleBtn");
+    if (themeToggleParamBtn) {
+      themeToggleParamBtn.addEventListener("click", toggleTheme);
     }
-  });
 
-  // Math Input Logic
-  inputAmount.addEventListener('input', () => {
-    const val = inputAmount.value;
-    const result = calculateExpression(val);
-    
-    const previewEl = document.getElementById('mathPreviewResult');
-    
-    if (result !== null && !isNaN(result) && isFinite(result)) {
-      if (val.match(/[+\-*/]/)) {
-        previewEl.textContent = '= ' + result.toFixed(2);
-        previewEl.style.display = 'block';
-        
-        // CORRECCIÓN: Color dinámico según el signo
-        if (result < 0) {
-          previewEl.style.color = 'var(--accent-red)';
-        } else if (result > 0) {
-          previewEl.style.color = 'var(--accent-green)';
+    // Sorting Headers
+    document.querySelectorAll("th[data-sort]").forEach((th) => {
+      th.addEventListener("click", () => {
+        const col = th.getAttribute("data-sort");
+        if (currentSort.col === col) {
+          currentSort.order = currentSort.order === "desc" ? "asc" : "desc";
         } else {
-          previewEl.style.color = 'var(--text-primary)';
+          currentSort.col = col;
+          currentSort.order = "desc";
+        }
+        sortAndRender();
+      });
+    });
+
+    // Modal
+    fabAdd.addEventListener("click", () => openModal());
+
+    const hideModal = () => {
+      addModal.classList.add("hidden");
+      setTimeout(() => addForm.reset(), 300);
+    };
+
+    closeModal.addEventListener("click", hideModal);
+    btnCancel.addEventListener("click", hideModal);
+
+    // Delete Modal
+    btnCancelDelete.addEventListener("click", () => {
+      deleteModal.classList.add("hidden");
+      deleteRowId = null;
+    });
+
+    btnConfirmDelete.addEventListener("click", () => {
+      if (deleteRowId) {
+        confirmDelete(deleteRowId);
+      }
+    });
+
+    // Math Input Logic
+    inputAmount.addEventListener("input", () => {
+      const val = inputAmount.value;
+      const result = calculateExpression(val);
+
+      const previewEl = document.getElementById("mathPreviewResult");
+
+      if (result !== null && !isNaN(result) && isFinite(result)) {
+        if (val.match(/[+\-*/]/)) {
+          previewEl.textContent = "= " + result.toFixed(2);
+          previewEl.style.display = "block";
+
+          // CORRECCIÓN: Color dinámico según el signo
+          if (result < 0) {
+            previewEl.style.color = "var(--accent-red)";
+          } else if (result > 0) {
+            previewEl.style.color = "var(--accent-green)";
+          } else {
+            previewEl.style.color = "var(--text-primary)";
+          }
+        } else {
+          previewEl.style.display = "none";
+        }
+
+        if (editMode === false) {
+          const currentType = inputType.value;
+          const isCurrentlyIncome = currentType.startsWith("INGRESO");
+          const isCurrentlyFrec =
+            currentType.includes("FRECUENTE") && !currentType.includes("NO");
+
+          // Solo auto-cambiar si hay un cambio de polaridad (positivo/negativo)
+          // pero preservando la preferencia de FRECUENTE vs NO FRECUENTE
+          if (result > 0 && !isCurrentlyIncome) {
+            // Cambiar de gasto a ingreso, preservando la frecuencia
+            const newType = isCurrentlyFrec
+              ? "INGRESO FRECUENTE"
+              : "INGRESO NO FRECUENTE";
+            if (window.setDropdownValue) window.setDropdownValue(newType);
+            else inputType.value = newType;
+          } else if (result <= 0 && isCurrentlyIncome) {
+            // Cambiar de ingreso a gasto, preservando la frecuencia
+            const newType = isCurrentlyFrec
+              ? "GASTO FRECUENTE"
+              : "GASTO NO FRECUENTE";
+            if (window.setDropdownValue) window.setDropdownValue(newType);
+            else inputType.value = newType;
+          }
         }
       } else {
-        previewEl.style.display = 'none';
+        previewEl.textContent = "";
+        previewEl.style.display = "none";
       }
-      
-      if (editMode === false) {
-        const currentType = inputType.value;
-        const isCurrentlyIncome = currentType.startsWith('INGRESO');
-        const isCurrentlyFrec = currentType.includes('FRECUENTE') && !currentType.includes('NO');
-        
-        // Solo auto-cambiar si hay un cambio de polaridad (positivo/negativo)
-        // pero preservando la preferencia de FRECUENTE vs NO FRECUENTE
-        if (result > 0 && !isCurrentlyIncome) {
-          // Cambiar de gasto a ingreso, preservando la frecuencia
-          const newType = isCurrentlyFrec ? 'INGRESO FRECUENTE' : 'INGRESO NO FRECUENTE';
-          if (window.setDropdownValue) window.setDropdownValue(newType);
-          else inputType.value = newType;
-        } else if (result <= 0 && isCurrentlyIncome) {
-          // Cambiar de ingreso a gasto, preservando la frecuencia
-          const newType = isCurrentlyFrec ? 'GASTO FRECUENTE' : 'GASTO NO FRECUENTE';
-          if (window.setDropdownValue) window.setDropdownValue(newType);
-          else inputType.value = newType;
+    });
+
+    // Metric Pills Listener (event delegation)
+    document.addEventListener("click", (e) => {
+      const pill = e.target.closest(".metric-pill");
+      if (pill) {
+        document
+          .querySelectorAll(".metric-pill")
+          .forEach((p) => p.classList.remove("active"));
+        pill.classList.add("active");
+        currentChartMetric = pill.dataset.metric;
+        renderCharts();
+      }
+    });
+
+    // Freq Income Additions
+
+    const hideFreqModal = () => {
+      freqIncomeModal.classList.add("hidden");
+      freqIncomeForm.reset();
+    };
+
+    btnEditFreqIncome.addEventListener("click", openFreqIncomeModal);
+    closeFreqIncomeModal.addEventListener("click", hideFreqModal);
+    btnCancelFreqIncome.addEventListener("click", hideFreqModal);
+    freqIncomeForm.addEventListener("submit", handleFreqIncomeSubmit);
+
+    if (fabUndo) fabUndo.addEventListener("click", undoDelete);
+
+    // Form Submit
+    addForm.addEventListener("submit", handleFormSubmit);
+
+    // Custom Dropdown Logic
+    setupCustomDropdown();
+
+    // Date Picker Input Trigger
+    const dateInput = document.getElementById("inputDate");
+    const calendarIcon = document.getElementById("calendarIcon");
+    if (calendarIcon && dateInput.showPicker) {
+      calendarIcon.addEventListener("click", () => {
+        dateInput.showPicker();
+      });
+    }
+
+    // Close modals on escape key
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        addModal.classList.add("hidden");
+        freqIncomeModal.classList.add("hidden");
+        deleteModal.classList.add("hidden");
+        document.getElementById("searchModal").classList.add("hidden");
+        appSidebar.classList.remove("open");
+        sidebarOverlay.classList.add("hidden");
+      }
+    });
+
+    // Search Logic Listeners
+    const btnOpenSearch = document.getElementById("btnOpenSearch");
+    const searchModal = document.getElementById("searchModal");
+    const closeSearchModal = document.getElementById("closeSearchModal");
+    const searchForm = document.getElementById("searchForm");
+    const btnClearSearch = document.getElementById("btnClearSearch");
+    const btnExitSearch = document.getElementById("btnExitSearch");
+
+    if (btnOpenSearch)
+      btnOpenSearch.onclick = () => searchModal.classList.remove("hidden");
+    if (closeSearchModal) {
+      closeSearchModal.onclick = () => searchModal.classList.add("hidden");
+    }
+
+    if (btnClearSearch) {
+      btnClearSearch.onclick = () => {
+        searchForm.reset();
+      };
+    }
+
+    if (searchForm) {
+      searchForm.onsubmit = (e) => {
+        e.preventDefault();
+        executeAdvancedSearch();
+      };
+    }
+
+    if (btnExitSearch) {
+      btnExitSearch.onclick = () => {
+        exitSearchMode();
+      };
+    }
+
+    // Close modals on overlay click
+    window.onclick = (event) => {
+      if (event.target === addModal) addModal.classList.add("hidden");
+      if (event.target === freqIncomeModal)
+        freqIncomeModal.classList.add("hidden");
+      if (event.target === deleteModal) deleteModal.classList.add("hidden");
+      if (event.target === searchModal) searchModal.classList.add("hidden");
+    };
+
+    // Close dropdowns on outside click
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest(".custom-dropdown")) {
+        document.querySelectorAll(".dropdown-options").forEach((el) => {
+          el.classList.add("hidden");
+        });
+        document.querySelectorAll(".dropdown-selected").forEach((el) => {
+          el.classList.remove("active");
+        });
+      }
+    });
+
+    // ============================================
+    // CUSTOM KEYBOARD LOGIC (MOBILE)
+    // ============================================
+    const customKeyboard = document.getElementById("custom-calc-keyboard");
+
+    inputAmount.addEventListener("focus", () => {
+      if (window.innerWidth <= 768) {
+        document.body.classList.add("keyboard-active");
+        customKeyboard.classList.remove("hidden");
+
+        // Integración con Back Button (History API)
+        if (window.history.state?.keyboardOpen !== true) {
+          window.history.pushState({ keyboardOpen: true }, "");
         }
+
+        // Asegurar que el input sea visible después de que el teclado aparezca
+        setTimeout(() => {
+          inputAmount.scrollIntoView({ behavior: "smooth", block: "center" });
+        }, 300);
       }
-    } else {
-      previewEl.textContent = '';
-      previewEl.style.display = 'none';
-    }
-  });
-
-  // Metric Pills Listener (event delegation)
-  document.addEventListener('click', (e) => {
-    const pill = e.target.closest('.metric-pill');
-    if (pill) {
-      document.querySelectorAll('.metric-pill').forEach(p => p.classList.remove('active'));
-      pill.classList.add('active');
-      currentChartMetric = pill.dataset.metric;
-      renderCharts();
-    }
-  });
-
-  // Freq Income Additions
-  
-  const hideFreqModal = () => {
-    freqIncomeModal.classList.add('hidden');
-    freqIncomeForm.reset();
-  };
-
-  btnEditFreqIncome.addEventListener('click', openFreqIncomeModal);
-  closeFreqIncomeModal.addEventListener('click', hideFreqModal);
-  btnCancelFreqIncome.addEventListener('click', hideFreqModal);
-  freqIncomeForm.addEventListener('submit', handleFreqIncomeSubmit);
-  
-  if(fabUndo) fabUndo.addEventListener('click', undoDelete);
-
-  // Form Submit
-  addForm.addEventListener('submit', handleFormSubmit);
-  
-  // Custom Dropdown Logic
-  setupCustomDropdown();
-  
-  // Date Picker Input Trigger
-  const dateInput = document.getElementById('inputDate');
-  const calendarIcon = document.getElementById('calendarIcon');
-  if (calendarIcon && dateInput.showPicker) {
-    calendarIcon.addEventListener('click', () => {
-      dateInput.showPicker();
     });
-  }
-  
-  // Close modals on escape key
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      addModal.classList.add('hidden');
-      freqIncomeModal.classList.add('hidden');
-      deleteModal.classList.add('hidden');
-      document.getElementById('searchModal').classList.add('hidden');
-      appSidebar.classList.remove('open');
-      sidebarOverlay.classList.add('hidden');
-    }
-  });
 
-  // Search Logic Listeners
-  const btnOpenSearch = document.getElementById('btnOpenSearch');
-  const searchModal = document.getElementById('searchModal');
-  const closeSearchModal = document.getElementById('closeSearchModal');
-  const searchForm = document.getElementById('searchForm');
-  const btnClearSearch = document.getElementById('btnClearSearch');
-  const btnExitSearch = document.getElementById('btnExitSearch');
-
-  if (btnOpenSearch) btnOpenSearch.onclick = () => searchModal.classList.remove('hidden');
-  if (closeSearchModal) {
-    closeSearchModal.onclick = () => searchModal.classList.add('hidden');
-  }
-  
-  if (btnClearSearch) {
-    btnClearSearch.onclick = () => {
-      searchForm.reset();
-    };
-  }
-
-  if (searchForm) {
-    searchForm.onsubmit = (e) => {
-      e.preventDefault();
-      executeAdvancedSearch();
-    };
-  }
-
-  if (btnExitSearch) {
-    btnExitSearch.onclick = () => {
-      exitSearchMode();
-    };
-  }
-
-  // Close modals on overlay click
-  window.onclick = (event) => {
-    if (event.target === addModal) addModal.classList.add('hidden');
-    if (event.target === freqIncomeModal) freqIncomeModal.classList.add('hidden');
-    if (event.target === deleteModal) deleteModal.classList.add('hidden');
-    if (event.target === searchModal) searchModal.classList.add('hidden');
-  };
-  
-  // Close dropdowns on outside click
-  document.addEventListener('click', (e) => {
-    if (!e.target.closest('.custom-dropdown')) {
-      document.querySelectorAll('.dropdown-options').forEach(el => {
-        el.classList.add('hidden');
-      });
-      document.querySelectorAll('.dropdown-selected').forEach(el => {
-        el.classList.remove('active');
-      });
-    }
-  });
-
-  // ============================================
-  // CUSTOM KEYBOARD LOGIC (MOBILE)
-  // ============================================
-  const customKeyboard = document.getElementById('custom-calc-keyboard');
-
-  inputAmount.addEventListener('focus', () => {
-    if (window.innerWidth <= 768) {
-      document.body.classList.add('keyboard-active');
-      customKeyboard.classList.remove('hidden');
-      
-      // Integración con Back Button (History API)
-      if (window.history.state?.keyboardOpen !== true) {
-        window.history.pushState({ keyboardOpen: true }, '');
-      }
-      
-      // Asegurar que el input sea visible después de que el teclado aparezca
+    inputAmount.addEventListener("blur", () => {
+      // Pequeño delay para dejar que terminen las transiciones
       setTimeout(() => {
-        inputAmount.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }, 300);
-    }
-  });
+        document.body.classList.remove("keyboard-active");
+        customKeyboard.classList.add("hidden");
 
-  inputAmount.addEventListener('blur', () => {
-    // Pequeño delay para dejar que terminen las transiciones
-    setTimeout(() => {
-      document.body.classList.remove('keyboard-active');
-      customKeyboard.classList.add('hidden');
-      
-      // Si el blur fue manual (Hecho o clic fuera) y el estado sigue siendo de teclado abierto, limpiar historial
-      if (window.history.state?.keyboardOpen === true) {
-        window.history.back();
+        // Si el blur fue manual (Hecho o clic fuera) y el estado sigue siendo de teclado abierto, limpiar historial
+        if (window.history.state?.keyboardOpen === true) {
+          window.history.back();
+        }
+      }, 150);
+    });
+
+    // Manejar el botón de atrás del sistema/navegador
+    window.addEventListener("popstate", (event) => {
+      const isKeyboardOpen = !customKeyboard.classList.contains("hidden");
+      if (
+        isKeyboardOpen &&
+        (!event.state || event.state.keyboardOpen !== true)
+      ) {
+        inputAmount.blur(); // El blur disparará el ocultamiento y la limpieza de clases
       }
-    }, 150);
-  });
-
-  // Manejar el botón de atrás del sistema/navegador
-  window.addEventListener('popstate', (event) => {
-    const isKeyboardOpen = !customKeyboard.classList.contains('hidden');
-    if (isKeyboardOpen && (!event.state || event.state.keyboardOpen !== true)) {
-      inputAmount.blur(); // El blur disparará el ocultamiento y la limpieza de clases
-    }
-  });
-
-  // Prevenir que el input pierda el foco al tocar los botones del teclado custom
-  customKeyboard.addEventListener('mousedown', (e) => {
-    if (e.target.closest('.kb-btn')) {
-      e.preventDefault(); // Mantiene el foco en el inputAmount
-    }
-  });
-  
-  // Soporte para touch
-  customKeyboard.addEventListener('touchstart', (e) => {
-    if (e.target.closest('.kb-btn')) {
-      // No preventDefault aquí para permitir el click, pero el mousedown se encargará del foco
-    }
-  }, {passive: true});
-}
-
-// ============================================
-// CUSTOM DROPDOWN
-// ============================================
-function setupCustomDropdown() {
-  const dropdown = document.getElementById('typeDropdown');
-  const selectedEl = document.getElementById('dropdownSelected');
-  const optionsContainer = document.getElementById('dropdownOptions');
-  const hiddenInput = document.getElementById('inputType');
-  const selectedText = document.getElementById('selectedText');
-  const selectedDot = document.getElementById('selectedDot');
-  
-  const options = [
-    { val: 'GASTO NO FRECUENTE', label: 'Gasto No Frecuente', color: 'dot-yellow' },
-    { val: 'GASTO FRECUENTE', label: 'Gasto Frecuente', color: 'dot-red' },
-    { val: 'INGRESO NO FRECUENTE', label: 'Ingreso No Frecuente', color: 'dot-green' }
-  ];
-  
-  optionsContainer.innerHTML = '';
-  options.forEach(opt => {
-    const div = document.createElement('div');
-    // AGREGADO: Clase específica para sombra/color
-    div.className = `dropdown-option opt-${opt.val.toLowerCase().replace(/\s+/g, '-')}`;
-    div.dataset.value = opt.val;
-    div.innerHTML = `<span class="dot-indicator ${opt.color}"></span> ${opt.label}`;
-    div.addEventListener('click', () => selectOption(opt));
-    optionsContainer.appendChild(div);
-  });
-  
-  selectedEl.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const isHidden = optionsContainer.classList.contains('hidden');
-    
-    // Close all other dropdowns
-    document.querySelectorAll('.dropdown-options').forEach(el => el.classList.add('hidden'));
-    document.querySelectorAll('.dropdown-selected').forEach(el => el.classList.remove('active'));
-    
-    if (isHidden) {
-      optionsContainer.classList.remove('hidden');
-      selectedEl.classList.add('active');
-    } else {
-      optionsContainer.classList.add('hidden');
-      selectedEl.classList.remove('active');
-    }
-  });
-  
-  window.selectOption = function(optObj) {
-    hiddenInput.value = optObj.val;
-    selectedText.textContent = optObj.label;
-    selectedDot.className = 'dot-indicator ' + optObj.color;
-    
-    // Update visual selection
-    document.querySelectorAll('.dropdown-option').forEach(el => {
-      el.classList.toggle('selected', el.dataset.value === optObj.val);
     });
-    
-    optionsContainer.classList.add('hidden');
-    selectedEl.classList.remove('active');
-  };
-  
-  const initial = options.find(o => o.val === hiddenInput.value) || options[0];
-  selectOption(initial);
-  
-  window.setDropdownValue = function(val) {
-    const found = options.find(o => o.val === val);
-    if (found) selectOption(found);
-  };
-}
 
-// ============================================
-// YEAR DROPDOWN
-// ============================================
-function setupYearDropdown() {
-  const wrapper = document.getElementById('yearDropdownWrapper');
-  const head = document.getElementById('yearSelectedHead');
-  const optionsContainer = document.getElementById('yearDropdownOptions');
-  const mobileSelect = document.getElementById('yearSelectMobile');
-  
-  const currentYr = new Date().getFullYear();
-  const years = [currentYr, currentYr - 1, currentYr - 2, currentYr - 3, currentYr - 4];
-  
-  // Populate desktop dropdown
-  optionsContainer.innerHTML = '';
-  years.forEach(y => {
-    const div = document.createElement('div');
-    div.className = 'dropdown-option';
-    div.innerHTML = `<span>${y}</span> <i class="fa-solid fa-check" style="opacity: ${currentYear === y ? 1 : 0}; color: var(--accent-green);"></i>`;
-    
-    div.addEventListener('click', () => {
-      updateYearUI(y);
-      if(mobileSelect) mobileSelect.value = y;
-      updateHeaderDate();
-      loadTransactions();
-      
-      Array.from(optionsContainer.children).forEach(child => {
-        const icon = child.querySelector('.fa-check');
-        if(icon) icon.style.opacity = child.textContent.includes(y.toString()) ? '1' : '0';
+    // Prevenir que el input pierda el foco al tocar los botones del teclado custom
+    customKeyboard.addEventListener("mousedown", (e) => {
+      if (e.target.closest(".kb-btn")) {
+        e.preventDefault(); // Mantiene el foco en el inputAmount
+      }
+    });
+
+    // Soporte para touch
+    customKeyboard.addEventListener(
+      "touchstart",
+      (e) => {
+        if (e.target.closest(".kb-btn")) {
+          // No preventDefault aquí para permitir el click, pero el mousedown se encargará del foco
+        }
+      },
+      { passive: true },
+    );
+  }
+
+  // ============================================
+  // CUSTOM DROPDOWN
+  // ============================================
+  function setupCustomDropdown() {
+    const dropdown = document.getElementById("typeDropdown");
+    const selectedEl = document.getElementById("dropdownSelected");
+    const optionsContainer = document.getElementById("dropdownOptions");
+    const hiddenInput = document.getElementById("inputType");
+    const selectedText = document.getElementById("selectedText");
+    const selectedDot = document.getElementById("selectedDot");
+
+    const options = [
+      {
+        val: "GASTO NO FRECUENTE",
+        label: "Gasto No Frecuente",
+        color: "dot-yellow",
+      },
+      { val: "GASTO FRECUENTE", label: "Gasto Frecuente", color: "dot-red" },
+      {
+        val: "INGRESO NO FRECUENTE",
+        label: "Ingreso No Frecuente",
+        color: "dot-green",
+      },
+    ];
+
+    optionsContainer.innerHTML = "";
+    options.forEach((opt) => {
+      const div = document.createElement("div");
+      // AGREGADO: Clase específica para sombra/color
+      div.className = `dropdown-option opt-${opt.val.toLowerCase().replace(/\s+/g, "-")}`;
+      div.dataset.value = opt.val;
+      div.innerHTML = `<span class="dot-indicator ${opt.color}"></span> ${opt.label}`;
+      div.addEventListener("click", () => selectOption(opt));
+      optionsContainer.appendChild(div);
+    });
+
+    selectedEl.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const isHidden = optionsContainer.classList.contains("hidden");
+
+      // Close all other dropdowns
+      document
+        .querySelectorAll(".dropdown-options")
+        .forEach((el) => el.classList.add("hidden"));
+      document
+        .querySelectorAll(".dropdown-selected")
+        .forEach((el) => el.classList.remove("active"));
+
+      if (isHidden) {
+        optionsContainer.classList.remove("hidden");
+        selectedEl.classList.add("active");
+      } else {
+        optionsContainer.classList.add("hidden");
+        selectedEl.classList.remove("active");
+      }
+    });
+
+    window.selectOption = function (optObj) {
+      hiddenInput.value = optObj.val;
+      selectedText.textContent = optObj.label;
+      selectedDot.className = "dot-indicator " + optObj.color;
+
+      // Update visual selection
+      document.querySelectorAll(".dropdown-option").forEach((el) => {
+        el.classList.toggle("selected", el.dataset.value === optObj.val);
       });
-      
-      showToast(`Año cambiado a ${y}`, 'info');
+
+      optionsContainer.classList.add("hidden");
+      selectedEl.classList.remove("active");
+    };
+
+    const initial =
+      options.find((o) => o.val === hiddenInput.value) || options[0];
+    selectOption(initial);
+
+    window.setDropdownValue = function (val) {
+      const found = options.find((o) => o.val === val);
+      if (found) selectOption(found);
+    };
+  }
+
+  // ============================================
+  // YEAR DROPDOWN
+  // ============================================
+  function setupYearDropdown() {
+    const wrapper = document.getElementById("yearDropdownWrapper");
+    const head = document.getElementById("yearSelectedHead");
+    const optionsContainer = document.getElementById("yearDropdownOptions");
+    const mobileSelect = document.getElementById("yearSelectMobile");
+
+    const currentYr = new Date().getFullYear();
+    const years = [
+      currentYr,
+      currentYr - 1,
+      currentYr - 2,
+      currentYr - 3,
+      currentYr - 4,
+    ];
+
+    // Populate desktop dropdown
+    optionsContainer.innerHTML = "";
+    years.forEach((y) => {
+      const div = document.createElement("div");
+      div.className = "dropdown-option";
+      div.innerHTML = `<span>${y}</span> <i class="fa-solid fa-check" style="opacity: ${currentYear === y ? 1 : 0}; color: var(--accent-green);"></i>`;
+
+      div.addEventListener("click", () => {
+        updateYearUI(y);
+        if (mobileSelect) mobileSelect.value = y;
+        updateHeaderDate();
+        loadTransactions();
+
+        Array.from(optionsContainer.children).forEach((child) => {
+          const icon = child.querySelector(".fa-check");
+          if (icon)
+            icon.style.opacity = child.textContent.includes(y.toString())
+              ? "1"
+              : "0";
+        });
+
+        showToast(`Año cambiado a ${y}`, "info");
+      });
+
+      optionsContainer.appendChild(div);
     });
-    
-    optionsContainer.appendChild(div);
-  });
-  
-  // Populate mobile select
-  if (mobileSelect) {
-    mobileSelect.innerHTML = '';
-    years.forEach(y => {
-      const option = document.createElement('option');
-      option.value = y;
-      option.textContent = y;
-      if (y === currentYear) option.selected = true;
-      mobileSelect.appendChild(option);
+
+    // Populate mobile select
+    if (mobileSelect) {
+      mobileSelect.innerHTML = "";
+      years.forEach((y) => {
+        const option = document.createElement("option");
+        option.value = y;
+        option.textContent = y;
+        if (y === currentYear) option.selected = true;
+        mobileSelect.appendChild(option);
+      });
+    }
+
+    head.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const isHidden = optionsContainer.classList.contains("hidden");
+
+      document
+        .querySelectorAll(".dropdown-options")
+        .forEach((el) => el.classList.add("hidden"));
+
+      if (isHidden) {
+        optionsContainer.classList.remove("hidden");
+        head.classList.add("active");
+      } else {
+        optionsContainer.classList.add("hidden");
+        head.classList.remove("active");
+      }
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!wrapper.contains(e.target)) {
+        optionsContainer.classList.add("hidden");
+        head.classList.remove("active");
+      }
     });
   }
-  
-  head.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const isHidden = optionsContainer.classList.contains('hidden');
-    
-    document.querySelectorAll('.dropdown-options').forEach(el => el.classList.add('hidden'));
-    
-    if (isHidden) {
-      optionsContainer.classList.remove('hidden');
-      head.classList.add('active');
-    } else {
-      optionsContainer.classList.add('hidden');
-      head.classList.remove('active');
-    }
-  });
-  
-  document.addEventListener('click', (e) => {
-    if (!wrapper.contains(e.target)) {
-      optionsContainer.classList.add('hidden');
-      head.classList.remove('active');
-    }
-  });
-}
 
-// ============================================
-// HELPERS
-// ============================================
-function updateYearUI(year) {
-  const hidden = document.getElementById('yearSelect');
-  const text = document.getElementById('yearSelectedText');
-  const quickMonthsYearText = document.getElementById('quickMonthsYearText');
-  if(hidden) hidden.value = year;
-  if(text) text.textContent = year;
-  if(quickMonthsYearText) quickMonthsYearText.textContent = ' ' + year;
-  currentYear = year;
-}
-
-function updateHeaderDate() {
-  currentMonthDisplay.textContent = monthNames[currentMonth];
-  if(currentMonthDisplayMobile) currentMonthDisplayMobile.textContent = monthNames[currentMonth];
-  document.getElementById('pageSubtitle').textContent = monthNames[currentMonth] + ' ' + currentYear;
-  
-  quickMonthChips.forEach(chip => {
-    chip.classList.toggle('active', parseInt(chip.getAttribute('data-month')) === currentMonth);
-  });
-}
-
-function changeMonth(delta) {
-  currentMonth += delta;
-  if (currentMonth > 11) {
-    currentMonth = 0;
-    currentYear++;
-    updateYearUI(currentYear);
-    if(yearSelectMobile) yearSelectMobile.value = currentYear;
-  } else if (currentMonth < 0) {
-    currentMonth = 11;
-    currentYear--;
-    updateYearUI(currentYear);
-    if(yearSelectMobile) yearSelectMobile.value = currentYear;
-  }
-  updateHeaderDate();
-  loadTransactions();
-}
-
-function addMathSymbol(symbol) {
-  const input = document.getElementById('inputAmount');
-  const start = input.selectionStart;
-  const end = input.selectionEnd;
-  const text = input.value;
-  
-  // Insert symbol at cursor position
-  input.value = text.substring(0, start) + symbol + text.substring(end);
-  
-  // Move cursor to after the inserted symbol
-  const newPos = start + symbol.length;
-  input.setSelectionRange(newPos, newPos);
-  
-  // Trigger input event for preview
-  input.dispatchEvent(new Event('input', { bubbles: true }));
-}
-
-function clearAmount() {
-  const input = document.getElementById('inputAmount');
-  input.value = '';
-  input.dispatchEvent(new Event('input', { bubbles: true }));
-}
-
-function deleteLastChar() {
-  const input = document.getElementById('inputAmount');
-  const start = input.selectionStart;
-  const end = input.selectionEnd;
-  const text = input.value;
-  
-  if (start === end) {
-    if (start > 0) {
-      input.value = text.substring(0, start - 1) + text.substring(end);
-      input.setSelectionRange(start - 1, start - 1);
-    }
-  } else {
-    input.value = text.substring(0, start) + text.substring(end);
-    input.setSelectionRange(start, start);
-  }
-  input.dispatchEvent(new Event('input', { bubbles: true }));
-}
-
-function blurAmount() {
-  document.getElementById('inputAmount').blur();
-}
-
-function calculateExpression(expression) {
-  if (!expression) return 0;
-  const cleanExpr = expression.replace(/[^0-9+\-*/.()]/g, '');
-  try {
-    return new Function('return ' + cleanExpr)();
-  } catch (e) {
-    return null;
-  }
-}
-
-function formatMoney(val) {
-  if (!val) return 'S/ 0.00';
-  const num = Number(val);
-  if (isNaN(num)) return val;
-  const prefix = num >= 0 ? 'S/ ' : '-S/ ';
-  return prefix + Math.abs(num).toFixed(2);
-}
-
-function abbreviateType(type) {
-  if (!type) return '';
-  const map = {
-    'GASTO NO FRECUENTE': 'G. No Frec.',
-    'GASTO FRECUENTE': 'G. Frec.',
-    'INGRESO NO FRECUENTE': 'Ing. No Frec.',
-    'INGRESO FRECUENTE': 'Ing. Frec.'
-  };
-  return map[type] || type;
-}
-
-// ============================================
-// SORTING
-// ============================================
-function sortAndRender() {
-  if (!transactionCache) return;
-  
-  transactionCache.sort((a, b) => {
-    let valA, valB;
-    
-    if (currentSort.col === 'date') {
-      valA = new Date(a.rawDate).getTime();
-      valB = new Date(b.rawDate).getTime();
-    } else if (currentSort.col === 'amount') {
-      valA = parseFloat(a.amount);
-      valB = parseFloat(b.amount);
-    } else if (currentSort.col === 'type') {
-      valA = a.type.toLowerCase();
-      valB = b.type.toLowerCase();
-    } else if (currentSort.col === 'detail') {
-      valA = a.detail.toLowerCase();
-      valB = b.detail.toLowerCase();
-    }
-    
-    if (valA < valB) return currentSort.order === 'asc' ? -1 : 1;
-    if (valA > valB) return currentSort.order === 'asc' ? 1 : -1;
-    return 0;
-  });
-  
-  document.querySelectorAll('th i').forEach(icon => icon.className = 'fa-solid fa-sort');
-  const activeTh = document.querySelector(`th[data-sort="${currentSort.col}"]`);
-  if (activeTh) {
-    const icon = activeTh.querySelector('i');
-    if (icon) {
-      icon.className = `fa-solid fa-sort-${currentSort.order === 'asc' ? 'up' : 'down'}`;
-    }
+  // ============================================
+  // HELPERS
+  // ============================================
+  function updateYearUI(year) {
+    const hidden = document.getElementById("yearSelect");
+    const text = document.getElementById("yearSelectedText");
+    const quickMonthsYearText = document.getElementById("quickMonthsYearText");
+    if (hidden) hidden.value = year;
+    if (text) text.textContent = year;
+    if (quickMonthsYearText) quickMonthsYearText.textContent = " " + year;
+    currentYear = year;
   }
 
-  renderTransactions(transactionCache, false);
-}
+  function updateHeaderDate() {
+    currentMonthDisplay.textContent = monthNames[currentMonth];
+    if (currentMonthDisplayMobile)
+      currentMonthDisplayMobile.textContent = monthNames[currentMonth];
+    document.getElementById("pageSubtitle").textContent =
+      monthNames[currentMonth] + " " + currentYear;
 
-// ============================================
-// SEARCH LOGIC
-// ============================================
-function executeAdvancedSearch() {
-  const filters = {
-    text: document.getElementById('searchTextInput').value,
-    minAmount: document.getElementById('searchMinAmount').value,
-    maxAmount: document.getElementById('searchMaxAmount').value,
-    startDate: document.getElementById('searchStartDate').value,
-    endDate: document.getElementById('searchEndDate').value
-  };
-
-  // Validar que al menos un filtro esté presente
-  if (!filters.text && !filters.minAmount && !filters.maxAmount && !filters.startDate && !filters.endDate) {
-    showToast('Por favor ingresa al menos un criterio de búsqueda', 'info');
-    return;
+    quickMonthChips.forEach((chip) => {
+      chip.classList.toggle(
+        "active",
+        parseInt(chip.getAttribute("data-month")) === currentMonth,
+      );
+    });
   }
 
-  document.getElementById('searchModal').classList.add('hidden');
-  showTableSkeleton();
-  
-  // Ocultar sección de KPIs durante búsqueda global (no tienen sentido mes a mes)
-  document.querySelector('.header-stats-grid').style.display = 'none';
-  document.getElementById('searchActiveBanner').classList.remove('hidden');
-  
-  isSearchActive = true;
-
-  google.script.run
-    .withSuccessHandler((results) => {
-      searchResults = results;
-      renderTransactions(results, false);
-      showToast(`Se encontraron ${results.length} coincidencias`, 'success');
-      
-      // Cambiar título
-      document.getElementById('pageTitle').innerText = 'Resultados de Búsqueda';
-      document.getElementById('pageSubtitle').innerText = 'Filtros aplicados';
-    })
-    .withFailureHandler((err) => {
-      showToast('Error en búsqueda: ' + err.message, 'error');
-      exitSearchMode();
-    })
-    .getAdvancedTransactions(filters);
-}
-
-function updatePageTitles() {
-  const activeTabBtn = document.querySelector('.nav-item.active');
-  const activeTab = activeTabBtn ? activeTabBtn.getAttribute('data-tab') : 'expenses';
-  const titles = {
-    'expenses': 'Tabla de Gastos',
-    'summary': 'Dashboard',
-    'charts': 'Gráficos Anuales'
-  };
-  document.getElementById('pageTitle').innerText = titles[activeTab] || 'Tabla de Gastos';
-  updateHeaderDate();
-}
-
-function exitSearchMode() {
-  isSearchActive = false;
-  document.getElementById('searchActiveBanner').classList.add('hidden');
-  document.querySelector('.header-stats-grid').style.display = 'grid';
-  
-  // Restaurar títulos
-  updatePageTitles();
-  
-  // Usar el caché existente para restaurar la vista al instante sin llamar al servidor
-  if (transactionCache && transactionCache.length > 0) {
-    renderTransactions(transactionCache, false);
-  } else {
+  function changeMonth(delta) {
+    currentMonth += delta;
+    if (currentMonth > 11) {
+      currentMonth = 0;
+      currentYear++;
+      updateYearUI(currentYear);
+      if (yearSelectMobile) yearSelectMobile.value = currentYear;
+    } else if (currentMonth < 0) {
+      currentMonth = 11;
+      currentYear--;
+      updateYearUI(currentYear);
+      if (yearSelectMobile) yearSelectMobile.value = currentYear;
+    }
+    updateHeaderDate();
     loadTransactions();
   }
-}
 
-// ============================================
-// TRANSACTIONS
-// ============================================
-function loadTransactions() {
-  showTableSkeleton();
+  function addMathSymbol(symbol) {
+    const input = document.getElementById("inputAmount");
+    const start = input.selectionStart;
+    const end = input.selectionEnd;
+    const text = input.value;
 
-  google.script.run
-    .withSuccessHandler(renderTransactions)
-    .withFailureHandler((error) => {
-      const tbody = document.getElementById('transactionsTableBody');
-      if (tbody) {
-        tbody.innerHTML = `
+    // Insert symbol at cursor position
+    input.value = text.substring(0, start) + symbol + text.substring(end);
+
+    // Move cursor to after the inserted symbol
+    const newPos = start + symbol.length;
+    input.setSelectionRange(newPos, newPos);
+
+    // Trigger input event for preview
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  function clearAmount() {
+    const input = document.getElementById("inputAmount");
+    input.value = "";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  function deleteLastChar() {
+    const input = document.getElementById("inputAmount");
+    const start = input.selectionStart;
+    const end = input.selectionEnd;
+    const text = input.value;
+
+    if (start === end) {
+      if (start > 0) {
+        input.value = text.substring(0, start - 1) + text.substring(end);
+        input.setSelectionRange(start - 1, start - 1);
+      }
+    } else {
+      input.value = text.substring(0, start) + text.substring(end);
+      input.setSelectionRange(start, start);
+    }
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  function blurAmount() {
+    document.getElementById("inputAmount").blur();
+  }
+
+  function calculateExpression(expression) {
+    if (!expression) return 0;
+    const cleanExpr = expression.replace(/[^0-9+\-*/.()]/g, "");
+    try {
+      return new Function("return " + cleanExpr)();
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function formatMoney(val) {
+    if (!val) return "S/ 0.00";
+    const num = Number(val);
+    if (isNaN(num)) return val;
+    const prefix = num >= 0 ? "S/ " : "-S/ ";
+    return prefix + Math.abs(num).toFixed(2);
+  }
+
+  function abbreviateType(type) {
+    if (!type) return "";
+    const map = {
+      "GASTO NO FRECUENTE": "G. No Frec.",
+      "GASTO FRECUENTE": "G. Frec.",
+      "INGRESO NO FRECUENTE": "Ing. No Frec.",
+      "INGRESO FRECUENTE": "Ing. Frec.",
+    };
+    return map[type] || type;
+  }
+
+  // ============================================
+  // SORTING
+  // ============================================
+  function sortAndRender() {
+    if (!transactionCache) return;
+
+    transactionCache.sort((a, b) => {
+      let valA, valB;
+
+      if (currentSort.col === "date") {
+        valA = new Date(a.rawDate).getTime();
+        valB = new Date(b.rawDate).getTime();
+      } else if (currentSort.col === "amount") {
+        valA = parseFloat(a.amount);
+        valB = parseFloat(b.amount);
+      } else if (currentSort.col === "type") {
+        valA = a.type.toLowerCase();
+        valB = b.type.toLowerCase();
+      } else if (currentSort.col === "detail") {
+        valA = a.detail.toLowerCase();
+        valB = b.detail.toLowerCase();
+      }
+
+      if (valA < valB) return currentSort.order === "asc" ? -1 : 1;
+      if (valA > valB) return currentSort.order === "asc" ? 1 : -1;
+      return 0;
+    });
+
+    document
+      .querySelectorAll("th i")
+      .forEach((icon) => (icon.className = "fa-solid fa-sort"));
+    const activeTh = document.querySelector(
+      `th[data-sort="${currentSort.col}"]`,
+    );
+    if (activeTh) {
+      const icon = activeTh.querySelector("i");
+      if (icon) {
+        icon.className = `fa-solid fa-sort-${currentSort.order === "asc" ? "up" : "down"}`;
+      }
+    }
+
+    renderTransactions(transactionCache, false);
+  }
+
+  // ============================================
+  // SEARCH LOGIC
+  // ============================================
+  function executeAdvancedSearch() {
+    const filters = {
+      text: document.getElementById("searchTextInput").value,
+      minAmount: document.getElementById("searchMinAmount").value,
+      maxAmount: document.getElementById("searchMaxAmount").value,
+      startDate: document.getElementById("searchStartDate").value,
+      endDate: document.getElementById("searchEndDate").value,
+    };
+
+    // Validar que al menos un filtro esté presente
+    if (
+      !filters.text &&
+      !filters.minAmount &&
+      !filters.maxAmount &&
+      !filters.startDate &&
+      !filters.endDate
+    ) {
+      showToast("Por favor ingresa al menos un criterio de búsqueda", "info");
+      return;
+    }
+
+    document.getElementById("searchModal").classList.add("hidden");
+    showTableSkeleton();
+
+    // Ocultar sección de KPIs durante búsqueda global (no tienen sentido mes a mes)
+    document.querySelector(".header-stats-grid").style.display = "none";
+    document.getElementById("searchActiveBanner").classList.remove("hidden");
+
+    isSearchActive = true;
+
+    google.script.run
+      .withSuccessHandler((results) => {
+        searchResults = results;
+        renderTransactions(results, false);
+        showToast(`Se encontraron ${results.length} coincidencias`, "success");
+
+        // Cambiar título
+        document.getElementById("pageTitle").innerText =
+          "Resultados de Búsqueda";
+        document.getElementById("pageSubtitle").innerText = "Filtros aplicados";
+      })
+      .withFailureHandler((err) => {
+        showToast("Error en búsqueda: " + err.message, "error");
+        exitSearchMode();
+      })
+      .getAdvancedTransactions(filters);
+  }
+
+  function updatePageTitles() {
+    const activeTabBtn = document.querySelector(".nav-item.active");
+    const activeTab = activeTabBtn
+      ? activeTabBtn.getAttribute("data-tab")
+      : "expenses";
+    const titles = {
+      expenses: "Tabla de Gastos",
+      summary: "Dashboard",
+      charts: "Gráficos Anuales",
+    };
+    document.getElementById("pageTitle").innerText =
+      titles[activeTab] || "Tabla de Gastos";
+    updateHeaderDate();
+  }
+
+  function exitSearchMode() {
+    isSearchActive = false;
+    document.getElementById("searchActiveBanner").classList.add("hidden");
+    document.querySelector(".header-stats-grid").style.display = "grid";
+
+    // Restaurar títulos
+    updatePageTitles();
+
+    // Usar el caché existente para restaurar la vista al instante sin llamar al servidor
+    if (transactionCache && transactionCache.length > 0) {
+      renderTransactions(transactionCache, false);
+    } else {
+      loadTransactions();
+    }
+  }
+
+  // ============================================
+  // TRANSACTIONS
+  // ============================================
+  function loadTransactions() {
+    showTableSkeleton();
+
+    google.script.run
+      .withSuccessHandler(renderTransactions)
+      .withFailureHandler((error) => {
+        const tbody = document.getElementById("transactionsTableBody");
+        if (tbody) {
+          tbody.innerHTML = `
           <tr>
             <td colspan="5" style="text-align:center; padding: 30px; color: var(--accent-red);">
               <i class="fa-solid fa-exclamation-circle" style="font-size: 24px; margin-bottom: 10px;"></i><br>
@@ -954,34 +1218,34 @@ function loadTransactions() {
             </td>
           </tr>
         `;
-      }
-      showToast('Error al cargar transacciones: ' + error.message, 'error');
-    })
-    .getTransactions(currentMonth, currentYear);
-}
-
-function renderTransactions(data, updateCache = true) {
-  if (updateCache) transactionCache = data;
-  
-  if (updateCache) {
-    sortAndRender();
-    return;
+        }
+        showToast("Error al cargar transacciones: " + error.message, "error");
+      })
+      .getTransactions(currentMonth, currentYear);
   }
-  
-  const tbody = document.getElementById('transactionsTableBody');
-  tbody.innerHTML = '';
-  
-  let totalIncome = 0;
-  let totalExpense = 0;
-  let freqExpense = 0;
-  let noFreqExpense = 0;
-  let noFreqIncome = 0;
 
-  // Filtrar 'INGRESO FRECUENTE' de la tabla para no mostrarlo
-  const filteredData = data.filter(t => t.type !== 'INGRESO FRECUENTE');
+  function renderTransactions(data, updateCache = true) {
+    if (updateCache) transactionCache = data;
 
-  if (!filteredData || filteredData.length === 0) {
-    tbody.innerHTML = `
+    if (updateCache) {
+      sortAndRender();
+      return;
+    }
+
+    const tbody = document.getElementById("transactionsTableBody");
+    tbody.innerHTML = "";
+
+    let totalIncome = 0;
+    let totalExpense = 0;
+    let freqExpense = 0;
+    let noFreqExpense = 0;
+    let noFreqIncome = 0;
+
+    // Filtrar 'INGRESO FRECUENTE' de la tabla para no mostrarlo
+    const filteredData = data.filter((t) => t.type !== "INGRESO FRECUENTE");
+
+    if (!filteredData || filteredData.length === 0) {
+      tbody.innerHTML = `
       <tr>
         <td colspan="5" style="text-align:center; padding: 40px; color: var(--text-secondary);">
           <i class="fa-solid fa-inbox" style="font-size: 32px; margin-bottom: 15px; opacity: 0.5;"></i><br>
@@ -989,51 +1253,51 @@ function renderTransactions(data, updateCache = true) {
         </td>
       </tr>
     `;
-    updateHeaderStats(0, 0, 0, 0, 0);
-    return;
-  }
+      updateHeaderStats(0, 0, 0, 0, 0);
+      return;
+    }
 
-  const fragment = document.createDocumentFragment();
+    const fragment = document.createDocumentFragment();
 
-  filteredData.forEach(tx => {
-    const amt = Number(tx.amount);
-    if (amt > 0) {
-      totalIncome += amt;
-      noFreqIncome += amt;
-    }
-    else {
-      totalExpense += amt;
-      if (tx.type === 'GASTO FRECUENTE') freqExpense += amt;
-      else noFreqExpense += amt;
-    }
-    
-    const row = document.createElement('tr');
-    row.className = 'fade-in';
-    
-    // CORRECCIÓN: Sombreado para todos los tipos
-    if (tx.type === 'GASTO FRECUENTE') {
-      row.classList.add('row-gasto-frecuente');
-    } else if (tx.type === 'GASTO NO FRECUENTE') {
-      row.classList.add('row-gasto-no-frecuente');
-    } else if (tx.type === 'INGRESO FRECUENTE') {
-      row.classList.add('row-ingreso-frecuente');
-    } else if (tx.type === 'INGRESO NO FRECUENTE') {
-      row.classList.add('row-ingreso-no-frecuente');
-    }
-    
-    let amountClass = '';
-    if (amt >= 0) {
-      amountClass = 'amount-positive';
-    } else {
-      amountClass = tx.type === 'GASTO FRECUENTE' ? 'amount-negative' : 'amount-neutral';
-    }
-    
-    let typePillClass = 'pill-neutral';
-    if (tx.type === 'GASTO FRECUENTE') typePillClass = 'pill-red';
-    if (tx.type === 'INGRESO NO FRECUENTE') typePillClass = 'pill-green';
+    filteredData.forEach((tx) => {
+      const amt = Number(tx.amount);
+      if (amt > 0) {
+        totalIncome += amt;
+        noFreqIncome += amt;
+      } else {
+        totalExpense += amt;
+        if (tx.type === "GASTO FRECUENTE") freqExpense += amt;
+        else noFreqExpense += amt;
+      }
 
-    const detailText = tx.detail || '';
-    const detailHtml = `
+      const row = document.createElement("tr");
+      row.className = "fade-in";
+
+      // CORRECCIÓN: Sombreado para todos los tipos
+      if (tx.type === "GASTO FRECUENTE") {
+        row.classList.add("row-gasto-frecuente");
+      } else if (tx.type === "GASTO NO FRECUENTE") {
+        row.classList.add("row-gasto-no-frecuente");
+      } else if (tx.type === "INGRESO FRECUENTE") {
+        row.classList.add("row-ingreso-frecuente");
+      } else if (tx.type === "INGRESO NO FRECUENTE") {
+        row.classList.add("row-ingreso-no-frecuente");
+      }
+
+      let amountClass = "";
+      if (amt >= 0) {
+        amountClass = "amount-positive";
+      } else {
+        amountClass =
+          tx.type === "GASTO FRECUENTE" ? "amount-negative" : "amount-neutral";
+      }
+
+      let typePillClass = "pill-neutral";
+      if (tx.type === "GASTO FRECUENTE") typePillClass = "pill-red";
+      if (tx.type === "INGRESO NO FRECUENTE") typePillClass = "pill-green";
+
+      const detailText = tx.detail || "";
+      const detailHtml = `
       <div class="detail-wrapper">
         <div class="detail-content check-overflow" id="detail-${tx.rowId}">
           ${escapeHtml(detailText)}
@@ -1041,13 +1305,13 @@ function renderTransactions(data, updateCache = true) {
         <button class="btn-expand" style="display:none;" onclick="toggleDetail('${tx.rowId}', this)">+</button>
       </div>
     `;
-    
-    row.innerHTML = `
+
+      row.innerHTML = `
       <td style="white-space: nowrap;">
         <i class="fa-solid fa-grip-lines drag-handle"></i>
         ${tx.date}
       </td>
-      <td class="${amountClass}">${amt >= 0 ? '+ S/ ' : '- S/ '} ${Math.abs(amt).toFixed(2)}</td>
+      <td class="${amountClass}">${amt >= 0 ? "+ S/ " : "- S/ "} ${Math.abs(amt).toFixed(2)}</td>
       <td>${detailHtml}</td>
       <td><span class="${typePillClass}">${abbreviateType(tx.type)}</span></td>
       <td>
@@ -1061,743 +1325,984 @@ function renderTransactions(data, updateCache = true) {
         </div>
       </td>
     `;
-    
-    // Add Drag & Drop attributes
-    row.draggable = true;
-    row.dataset.rowId = tx.rowId;
-    row.addEventListener('dragstart', handleDragStart);
-    row.addEventListener('dragover', handleDragOver);
-    row.addEventListener('dragleave', handleDragLeave);
-    row.addEventListener('drop', handleDrop);
-    row.addEventListener('dragend', handleDragEnd);
-    
-    // Add lifting visual feedback listeners
-    const handle = row.querySelector('.drag-handle');
-    if (handle) {
-      const lift = () => row.classList.add('drag-lifted');
-      const dropLift = () => row.classList.remove('drag-lifted');
-      handle.addEventListener('mousedown', lift);
-      handle.addEventListener('touchstart', lift, {passive: true});
-      row.addEventListener('mouseup', dropLift);
-      row.addEventListener('touchend', dropLift);
-      row.addEventListener('dragend', dropLift);
-    }
-    
-    fragment.appendChild(row);
-  });
-  
-  tbody.appendChild(fragment);
-  
-  updateHeaderStats(totalIncome, totalExpense, freqExpense, noFreqExpense, noFreqIncome);
-  setTimeout(checkDetailOverflows, 0);
-}
 
-function updateHeaderStats(income, expense, freqExp, noFreqExp, noFreqInc) {
-  // Extraer el Ingreso Frecuente directamente del objeto 'summaries'
-  let freqInc = 0;
-  const currMonthYearStr = monthNames[currentMonth] + " " + currentYear;
-  if (summaries && summaries.length > 0) {
-    const summaryRow = summaries.find(s => s.monthYear === currMonthYearStr);
-    if (summaryRow) {
-      freqInc = Number(summaryRow.freqIncome) || 0;
-    }
+      // Add Drag & Drop attributes
+      row.draggable = true;
+      row.dataset.rowId = tx.rowId;
+      row.addEventListener("dragstart", handleDragStart);
+      row.addEventListener("dragover", handleDragOver);
+      row.addEventListener("dragleave", handleDragLeave);
+      row.addEventListener("drop", handleDrop);
+      row.addEventListener("dragend", handleDragEnd);
+
+      // Add lifting visual feedback listeners
+      const handle = row.querySelector(".drag-handle");
+      if (handle) {
+        const lift = () => row.classList.add("drag-lifted");
+        const dropLift = () => row.classList.remove("drag-lifted");
+        handle.addEventListener("mousedown", lift);
+        handle.addEventListener("touchstart", lift, { passive: true });
+        row.addEventListener("mouseup", dropLift);
+        row.addEventListener("touchend", dropLift);
+        row.addEventListener("dragend", dropLift);
+      }
+
+      fragment.appendChild(row);
+    });
+
+    tbody.appendChild(fragment);
+
+    updateHeaderStats(
+      totalIncome,
+      totalExpense,
+      freqExpense,
+      noFreqExpense,
+      noFreqIncome,
+    );
+    setTimeout(checkDetailOverflows, 0);
   }
 
-  // Sumar a los totales
-  const finalIncome = Number(income) + freqInc;
-  let balance = finalIncome + Number(expense);
-  
-  const elFreqInc = document.getElementById('statFreqIncome');
-  const elNoFreqInc = document.getElementById('statNoFreqIncome');
-  const elFreqExp = document.getElementById('statFreqExpense');
-  const elNoFreqExp = document.getElementById('statNoFreqExpense');
-  const elTotalExp = document.getElementById('statTotalExpense');
-  const elBalance = document.getElementById('statBalance');
-
-  if (elFreqInc) elFreqInc.innerText = '+ S/ ' + freqInc.toFixed(2);
-  if (elNoFreqInc) elNoFreqInc.innerText = '+ S/ ' + Math.abs(noFreqInc).toFixed(2);
-  if (elFreqExp) elFreqExp.innerText = '- S/ ' + Math.abs(freqExp).toFixed(2);
-  if (elNoFreqExp) elNoFreqExp.innerText = '- S/ ' + Math.abs(noFreqExp).toFixed(2);
-  if (elTotalExp) elTotalExp.innerText = '- S/ ' + Math.abs(expense).toFixed(2);
-  if (elBalance) elBalance.innerText = (balance >= 0 ? '+ S/ ' : '- S/ ') + Math.abs(balance).toFixed(2);
-}
-
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
-
-// ============================================
-// DETAIL EXPANSION
-// ============================================
-window.checkDetailOverflows = function() {
-  document.querySelectorAll('.detail-wrapper').forEach(wrapper => {
-    const content = wrapper.querySelector('.detail-content');
-    const btn = wrapper.querySelector('.btn-expand');
-    if (!content || !btn) return;
-    
-    if (content.scrollWidth > content.clientWidth + 1) {
-      btn.style.display = 'flex';
-    } else {
-      if (!content.classList.contains('expanded')) {
-        btn.style.display = 'none';
+  function updateHeaderStats(income, expense, freqExp, noFreqExp, noFreqInc) {
+    // Extraer el Ingreso Frecuente directamente del objeto 'summaries'
+    let freqInc = 0;
+    const currMonthYearStr = monthNames[currentMonth] + " " + currentYear;
+    if (summaries && summaries.length > 0) {
+      const summaryRow = summaries.find(
+        (s) => s.monthYear === currMonthYearStr,
+      );
+      if (summaryRow) {
+        freqInc = Number(summaryRow.freqIncome) || 0;
       }
     }
+
+    // Sumar a los totales
+    const finalIncome = Number(income) + freqInc;
+    let balance = finalIncome + Number(expense);
+
+    const elFreqInc = document.getElementById("statFreqIncome");
+    const elNoFreqInc = document.getElementById("statNoFreqIncome");
+    const elFreqExp = document.getElementById("statFreqExpense");
+    const elNoFreqExp = document.getElementById("statNoFreqExpense");
+    const elTotalExp = document.getElementById("statTotalExpense");
+    const elBalance = document.getElementById("statBalance");
+
+    if (elFreqInc) elFreqInc.innerText = "+ S/ " + freqInc.toFixed(2);
+    if (elNoFreqInc)
+      elNoFreqInc.innerText = "+ S/ " + Math.abs(noFreqInc).toFixed(2);
+    if (elFreqExp) elFreqExp.innerText = "- S/ " + Math.abs(freqExp).toFixed(2);
+    if (elNoFreqExp)
+      elNoFreqExp.innerText = "- S/ " + Math.abs(noFreqExp).toFixed(2);
+    if (elTotalExp)
+      elTotalExp.innerText = "- S/ " + Math.abs(expense).toFixed(2);
+    if (elBalance)
+      elBalance.innerText =
+        (balance >= 0 ? "+ S/ " : "- S/ ") + Math.abs(balance).toFixed(2);
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // ============================================
+  // DETAIL EXPANSION
+  // ============================================
+  window.checkDetailOverflows = function () {
+    document.querySelectorAll(".detail-wrapper").forEach((wrapper) => {
+      const content = wrapper.querySelector(".detail-content");
+      const btn = wrapper.querySelector(".btn-expand");
+      if (!content || !btn) return;
+
+      if (content.scrollWidth > content.clientWidth + 1) {
+        btn.style.display = "flex";
+      } else {
+        if (!content.classList.contains("expanded")) {
+          btn.style.display = "none";
+        }
+      }
+    });
+  };
+
+  window.toggleDetail = function (rowId, btn) {
+    const el = document.getElementById("detail-" + rowId);
+    if (el) {
+      el.classList.toggle("expanded");
+      btn.textContent = el.classList.contains("expanded") ? "−" : "+";
+    }
+  };
+
+  window.addEventListener("resize", () => {
+    checkDetailOverflows();
+    if (myChart) {
+      clearTimeout(resizeRenderTimer);
+      resizeRenderTimer = setTimeout(renderCharts, 160);
+    }
   });
-};
 
-window.toggleDetail = function(rowId, btn) {
-  const el = document.getElementById('detail-' + rowId);
-  if (el) {
-    el.classList.toggle('expanded');
-    btn.textContent = el.classList.contains('expanded') ? '−' : '+';
+  // ============================================
+  // EDIT / DELETE
+  // ============================================
+  let editMode = false;
+
+  window.startEdit = function (rowId) {
+    const item = transactionCache.find((t) => t.rowId === rowId);
+    if (!item) return;
+    openModal(item);
+  };
+
+  window.showDeleteModal = function (rowId) {
+    deleteRowId = rowId;
+    deleteModal.classList.remove("hidden");
+  };
+
+  // ============================================
+  // DRAG & DROP LOGIC
+  // ============================================
+  let dragSrcEl = null;
+
+  function handleDragStart(e) {
+    if (e.target.tagName.toLowerCase() !== "tr") return;
+    dragSrcEl = e.target;
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", e.target.dataset.rowId);
+    setTimeout(() => {
+      e.target.classList.remove("drag-lifted");
+      e.target.classList.add("dragging");
+    }, 50);
   }
-};
 
-window.addEventListener('resize', () => {
-  checkDetailOverflows();
-  if (myChart) {
-    clearTimeout(resizeRenderTimer);
-    resizeRenderTimer = setTimeout(renderCharts, 160);
+  function handleDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (dragSrcEl !== this) {
+      document
+        .querySelectorAll("#transactionsTableBody tr")
+        .forEach((r) => r.classList.remove("drag-over"));
+      this.classList.add("drag-over");
+    }
+    return false;
   }
-});
 
-// ============================================
-// EDIT / DELETE
-// ============================================
-let editMode = false;
-
-window.startEdit = function(rowId) {
-  const item = transactionCache.find(t => t.rowId === rowId);
-  if (!item) return;
-  openModal(item);
-};
-
-window.showDeleteModal = function(rowId) {
-  deleteRowId = rowId;
-  deleteModal.classList.remove('hidden');
-};
-
-// ============================================
-// DRAG & DROP LOGIC
-// ============================================
-let dragSrcEl = null;
-
-function handleDragStart(e) {
-  if (e.target.tagName.toLowerCase() !== 'tr') return;
-  dragSrcEl = e.target;
-  e.dataTransfer.effectAllowed = 'move';
-  e.dataTransfer.setData('text/plain', e.target.dataset.rowId);
-  setTimeout(() => {
-    e.target.classList.remove('drag-lifted');
-    e.target.classList.add('dragging');
-  }, 50);
-}
-
-function handleDragOver(e) {
-  e.preventDefault();
-  e.dataTransfer.dropEffect = 'move';
-  if (dragSrcEl !== this) {
-    document.querySelectorAll('#transactionsTableBody tr').forEach(r => r.classList.remove('drag-over'));
-    this.classList.add('drag-over');
+  function handleDragLeave(e) {
+    this.classList.remove("drag-over");
   }
-  return false;
-}
 
-function handleDragLeave(e) {
-  this.classList.remove('drag-over');
-}
+  function handleDrop(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    this.classList.remove("drag-over");
+    document
+      .querySelectorAll("#transactionsTableBody tr")
+      .forEach((r) => r.classList.remove("drag-over"));
 
-function handleDrop(e) {
-  e.preventDefault();
-  e.stopPropagation();
-  this.classList.remove('drag-over');
-  document.querySelectorAll('#transactionsTableBody tr').forEach(r => r.classList.remove('drag-over'));
-  
-  if (dragSrcEl !== this) {
-    const srcRowId = dragSrcEl.dataset.rowId;
-    const targetRowId = this.dataset.rowId;
-    
-    // Swap contents in DOM instantly
-    const srcHTML = dragSrcEl.innerHTML;
-    dragSrcEl.innerHTML = this.innerHTML;
-    this.innerHTML = srcHTML;
-    
-    // Swap dataset row IDs
-    dragSrcEl.dataset.rowId = targetRowId;
-    this.dataset.rowId = srcRowId;
-    
-    // Background update Google Script (Silently, no visual reload on success)
+    if (dragSrcEl !== this) {
+      const srcRowId = dragSrcEl.dataset.rowId;
+      const targetRowId = this.dataset.rowId;
+
+      // Swap contents in DOM instantly
+      const srcHTML = dragSrcEl.innerHTML;
+      dragSrcEl.innerHTML = this.innerHTML;
+      this.innerHTML = srcHTML;
+
+      // Swap dataset row IDs
+      dragSrcEl.dataset.rowId = targetRowId;
+      this.dataset.rowId = srcRowId;
+
+      // Background update Google Script (Silently, no visual reload on success)
+      google.script.run
+        .withFailureHandler((err) => {
+          showToast("Error moviendo celda: " + err.message, "error");
+          loadTransactions();
+        })
+        .swapTransactions(srcRowId, targetRowId);
+    }
+    return false;
+  }
+
+  function handleDragEnd(e) {
+    e.target.classList.remove("dragging");
+    document.querySelectorAll("#transactionsTableBody tr").forEach((row) => {
+      row.classList.remove("dragging");
+    });
+  }
+
+  function confirmDelete(rowId) {
+    const btn = document.querySelector(
+      `button[onclick="showDeleteModal(${rowId})"]`,
+    );
+    if (btn) {
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+      btn.disabled = true;
+    }
+
+    // Guardamos la transacción antes de eliminarla por si quieren deshacer
+    lastDeletedTransaction = transactionCache.find((t) => t.rowId === rowId);
+
     google.script.run
-      .withFailureHandler(err => {
-         showToast('Error moviendo celda: ' + err.message, 'error');
-         loadTransactions(); 
+      .withSuccessHandler(() => {
+        deleteModal.classList.add("hidden");
+
+        if (deleteRowId) {
+          transactionCache = transactionCache.filter(
+            (t) => t.rowId !== deleteRowId,
+          );
+          sortAndRender();
+          loadSummary();
+        }
+
+        deleteRowId = null;
+        showToast("Registro eliminado correctamente", "success");
+
+        // Mostrar y configurar el botón deshacer
+        if (fabUndo && lastDeletedTransaction) {
+          fabUndo.classList.remove("hidden");
+          if (undoTimeout) clearTimeout(undoTimeout);
+          undoTimeout = setTimeout(() => {
+            fabUndo.classList.add("hidden");
+            lastDeletedTransaction = null;
+          }, 12000); // 12 seconds to undo
+        }
       })
-      .swapTransactions(srcRowId, targetRowId);
+      .withFailureHandler((error) => {
+        deleteModal.classList.add("hidden");
+        if (btn) {
+          btn.innerHTML = '<i class="fa-solid fa-trash"></i>';
+          btn.disabled = false;
+        }
+        showToast("Error al eliminar: " + error.message, "error");
+      })
+      .deleteTransaction(rowId);
   }
-  return false;
-}
 
-function handleDragEnd(e) {
-  e.target.classList.remove('dragging');
-  document.querySelectorAll('#transactionsTableBody tr').forEach(row => {
-    row.classList.remove('dragging');
-  });
-}
+  window.undoDelete = function () {
+    if (!lastDeletedTransaction) return;
 
+    // Ocultar botón inmediatamente
+    fabUndo.classList.add("hidden");
+    if (undoTimeout) clearTimeout(undoTimeout);
 
-
-function confirmDelete(rowId) {
-  const btn = document.querySelector(`button[onclick="showDeleteModal(${rowId})"]`);
-  if (btn) {
-    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
-    btn.disabled = true;
-  }
-  
-  // Guardamos la transacción antes de eliminarla por si quieren deshacer
-  lastDeletedTransaction = transactionCache.find(t => t.rowId === rowId);
-  
-  google.script.run
-    .withSuccessHandler(() => {
-      deleteModal.classList.add('hidden');
-      
-      if (deleteRowId) {
-        transactionCache = transactionCache.filter(t => t.rowId !== deleteRowId);
-        sortAndRender();
-        loadSummary(); 
-      }
-      
-      deleteRowId = null;
-      showToast('Registro eliminado correctamente', 'success');
-      
-      // Mostrar y configurar el botón deshacer
-      if(fabUndo && lastDeletedTransaction) {
-        fabUndo.classList.remove('hidden');
-        if(undoTimeout) clearTimeout(undoTimeout);
-        undoTimeout = setTimeout(() => {
-          fabUndo.classList.add('hidden');
-          lastDeletedTransaction = null;
-        }, 12000); // 12 seconds to undo
-      }
-    })
-    .withFailureHandler((error) => {
-      deleteModal.classList.add('hidden');
-      if (btn) {
-        btn.innerHTML = '<i class="fa-solid fa-trash"></i>';
-        btn.disabled = false;
-      }
-      showToast('Error al eliminar: ' + error.message, 'error');
-    })
-    .deleteTransaction(rowId);
-}
-
-window.undoDelete = function() {
-  if(!lastDeletedTransaction) return;
-  
-  // Ocultar botón inmediatamente
-  fabUndo.classList.add('hidden');
-  if(undoTimeout) clearTimeout(undoTimeout);
-  
-  // Convertir rawDate (ISO string) a formato YYYY-MM-DD que espera el server
-  let dateStr = '';
-  if (lastDeletedTransaction.rawDate) {
-    const d = new Date(lastDeletedTransaction.rawDate);
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const dd = String(d.getDate()).padStart(2, '0');
-    dateStr = `${yyyy}-${mm}-${dd}`;
-  } else {
-    // Si no hay rawDate intentamos construir: lastDeletedTransaction.date es "28-feb-26"
-    const parts = lastDeletedTransaction.date.split('-');
-    const mMap = { ene:0,feb:1,mar:2,abr:3,may:4,jun:5,jul:6,ago:7,sep:8,oct:9,nov:10,dic:11 };
-    if (parts.length === 3) {
-      const mIndex = mMap[parts[1].toLowerCase()];
-      let yr = parseInt(parts[2]);
-      if (yr < 100) yr += 2000;
-      const d = new Date(yr, mIndex, parseInt(parts[0]));
+    // Convertir rawDate (ISO string) a formato YYYY-MM-DD que espera el server
+    let dateStr = "";
+    if (lastDeletedTransaction.rawDate) {
+      const d = new Date(lastDeletedTransaction.rawDate);
       const yyyy = d.getFullYear();
-      const mm = String(d.getMonth() + 1).padStart(2, '0');
-      const dd = String(d.getDate()).padStart(2, '0');
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
       dateStr = `${yyyy}-${mm}-${dd}`;
-    }
-  }
-  
-  const txData = {
-    date: dateStr,
-    amount: lastDeletedTransaction.amount,
-    detail: lastDeletedTransaction.detail,
-    type: lastDeletedTransaction.type
-  };
-  
-  const finishUndo = (restoredTransaction) => {
-    if (restoredTransaction) {
-      transactionCache.unshift(restoredTransaction);
-      sortAndRender();
-      loadSummary();
     } else {
-      // Si la fecha no cae en el mes actual simplemente recargamos
-      loadTransactions();
-    }
-    lastDeletedTransaction = null;
-    showToast('Acción revertida correctamente', 'success');
-  };
-  
-  google.script.run
-    .withSuccessHandler(finishUndo)
-    .withFailureHandler((err) => {
-      showToast('Error al deshacer: ' + err.message, 'error');
-    })
-    .addTransactionOptimized(txData, currentMonth, currentYear);
-}
-
-// ============================================
-// MODAL & FORM LOGIC
-// ============================================
-function openModal(data = null) {
-  addModal.classList.remove('hidden');
-  addForm.reset();
-  const previewEl = document.getElementById('mathPreviewResult');
-  previewEl.textContent = '';
-  previewEl.style.display = 'none';
-  
-  if (data) {
-    editMode = true;
-    document.getElementById('modalTitle').innerHTML = '<i class="fa-solid fa-pencil"></i> Editar Registro';
-    document.getElementById('editRowId').value = data.rowId;
-    
-    if (data.rawDate) {
-      const d = new Date(data.rawDate);
-      const yyyy = d.getFullYear();
-      const mm = String(d.getMonth() + 1).padStart(2, '0');
-      const dd = String(d.getDate()).padStart(2, '0');
-      document.getElementById('inputDate').value = `${yyyy}-${mm}-${dd}`;
-    }
-    
-    if (data.formula && data.formula.startsWith('=')) {
-      document.getElementById('inputAmount').value = data.formula.substring(1);
-    } else {
-      document.getElementById('inputAmount').value = data.amount;
-    }
-    
-    document.getElementById('inputDetail').value = data.detail;
-    window.setDropdownValue(data.type);
-    
-    document.getElementById('btnSubmit').innerHTML = '<i class="fa-solid fa-save"></i> Guardar Cambios';
-    
-  } else {
-    editMode = false;
-    document.getElementById('modalTitle').innerHTML = '<i class="fa-solid fa-calculator"></i> Nuevo Registro';
-    document.getElementById('editRowId').value = '';
-    
-    // Fix: Usar fecha local en lugar de UTC (evita salto de día después de las 7PM)
-    const today = new Date();
-    const yyyy = today.getFullYear();
-    const mm = String(today.getMonth() + 1).padStart(2, '0');
-    const dd = String(today.getDate()).padStart(2, '0');
-    document.getElementById('inputDate').value = `${yyyy}-${mm}-${dd}`;
-    
-    document.getElementById('btnSubmit').innerHTML = '<i class="fa-solid fa-plus"></i> Agregar';
-    window.setDropdownValue('GASTO NO FRECUENTE');
-  }
-}
-
-function handleFormSubmit(e) {
-  e.preventDefault();
-  
-  const rawAmount = inputAmount.value;
-  const finalAmount = calculateExpression(rawAmount);
-  
-  if (finalAmount === null || isNaN(finalAmount)) {
-    showToast('Por favor ingrese un monto válido', 'error');
-    return;
-  }
-
-  let amountToSend = finalAmount;
-  if (rawAmount.match(/[=+\-*/]/)) {
-    if (rawAmount.trim().startsWith('=')) {
-      amountToSend = rawAmount.trim();
-    } else {
-      if (rawAmount.match(/[+\-*/]/)) {
-        amountToSend = '=' + rawAmount.trim();
+      // Si no hay rawDate intentamos construir: lastDeletedTransaction.date es "28-feb-26"
+      const parts = lastDeletedTransaction.date.split("-");
+      const mMap = {
+        ene: 0,
+        feb: 1,
+        mar: 2,
+        abr: 3,
+        may: 4,
+        jun: 5,
+        jul: 6,
+        ago: 7,
+        sep: 8,
+        oct: 9,
+        nov: 10,
+        dic: 11,
+      };
+      if (parts.length === 3) {
+        const mIndex = mMap[parts[1].toLowerCase()];
+        let yr = parseInt(parts[2]);
+        if (yr < 100) yr += 2000;
+        const d = new Date(yr, mIndex, parseInt(parts[0]));
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const dd = String(d.getDate()).padStart(2, "0");
+        dateStr = `${yyyy}-${mm}-${dd}`;
       }
     }
-  }
 
-  const txData = {
-    date: document.getElementById('inputDate').value,
-    amount: amountToSend,
-    detail: document.getElementById('inputDetail').value,
-    type: inputType.value
-  };
-  
-  const rowId = document.getElementById('editRowId').value;
-  
-  const submitBtn = document.getElementById('btnSubmit');
-  const originalText = submitBtn.innerHTML;
-  submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Procesando...';
-  submitBtn.disabled = true;
+    const txData = {
+      date: dateStr,
+      amount: lastDeletedTransaction.amount,
+      detail: lastDeletedTransaction.detail,
+      type: lastDeletedTransaction.type,
+    };
 
-  const finishEdit = (updatedTransaction) => {
-    submitBtn.innerHTML = originalText;
-    submitBtn.disabled = false;
-    addModal.classList.add('hidden');
-    addForm.reset();
-    
-    // ACTUALIZACIÓN LOCAL: Buscar y reemplazar en el cache
-    if (updatedTransaction) {
-      const index = transactionCache.findIndex(t => t.rowId === updatedTransaction.rowId);
-      if (index > -1) {
-        transactionCache[index] = updatedTransaction;
+    const finishUndo = (restoredTransaction) => {
+      if (restoredTransaction) {
+        transactionCache.unshift(restoredTransaction);
         sortAndRender();
         loadSummary();
+      } else {
+        // Si la fecha no cae en el mes actual simplemente recargamos
+        loadTransactions();
       }
-    }
-    showToast('Cambios guardados correctamente', 'success');
-  };
-  
-  const finishAdd = (newTransaction) => {
-    submitBtn.innerHTML = originalText;
-    submitBtn.disabled = false;
-    addModal.classList.add('hidden');
-    addForm.reset();
-    
-    if (newTransaction) {
-      transactionCache.unshift(newTransaction);
-      sortAndRender();
-    }
-    showToast('Registro agregado correctamente', 'success');
-  };
-  
-  const handleError = (error) => {
-    submitBtn.innerHTML = originalText;
-    submitBtn.disabled = false;
-    showToast('Error: ' + error.message, 'error');
-  };
-  
-  if (editMode && rowId) {
+      lastDeletedTransaction = null;
+      showToast("Acción revertida correctamente", "success");
+    };
+
     google.script.run
-      .withSuccessHandler(finishEdit)
-      .withFailureHandler(handleError)
-      .editTransaction(rowId, txData);
-  } else {
-    google.script.run
-      .withSuccessHandler(finishAdd)
-      .withFailureHandler(handleError)
+      .withSuccessHandler(finishUndo)
+      .withFailureHandler((err) => {
+        showToast("Error al deshacer: " + err.message, "error");
+      })
       .addTransactionOptimized(txData, currentMonth, currentYear);
-  }
-}
+  };
 
-// ============================================
-// SUMMARY
-// ============================================
-function loadSummary() {
-  showSummarySkeleton();
-  
-  google.script.run
-    .withSuccessHandler((data) => {
-      summaries = data;
-      renderSummaryTable(data);
-    })
-    .withFailureHandler((error) => {
-      showToast('Error al cargar resumen: ' + error.message, 'error');
-    })
-    .getMonthlySummaryData();
-}
+  // ============================================
+  // MODAL & FORM LOGIC
+  // ============================================
+  function openModal(data = null) {
+    addModal.classList.remove("hidden");
+    addForm.reset();
+    const previewEl = document.getElementById("mathPreviewResult");
+    previewEl.textContent = "";
+    previewEl.style.display = "none";
 
-// Dashboard chart instances
-var dashPieIncome  = null;
-var dashPieExpense = null;
-var dashTrend      = null;
-var summarySelectedYear = null;
+    if (data) {
+      editMode = true;
+      document.getElementById("modalTitle").innerHTML =
+        '<i class="fa-solid fa-pencil"></i> Editar Registro';
+      document.getElementById("editRowId").value = data.rowId;
 
-function renderSummaryTable(data) {
-  const tbodyElement = document.getElementById('summaryTableBody');
-  if (!data || data.length === 0) {
-    if (tbodyElement) {
-      tbodyElement.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--text-secondary);">No hay datos</td></tr>';
+      if (data.rawDate) {
+        const d = new Date(data.rawDate);
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const dd = String(d.getDate()).padStart(2, "0");
+        document.getElementById("inputDate").value = `${yyyy}-${mm}-${dd}`;
+      }
+
+      if (data.formula && data.formula.startsWith("=")) {
+        document.getElementById("inputAmount").value =
+          data.formula.substring(1);
+      } else {
+        document.getElementById("inputAmount").value = data.amount;
+      }
+
+      document.getElementById("inputDetail").value = data.detail;
+      window.setDropdownValue(data.type);
+
+      document.getElementById("btnSubmit").innerHTML =
+        '<i class="fa-solid fa-save"></i> Guardar Cambios';
+    } else {
+      editMode = false;
+      document.getElementById("modalTitle").innerHTML =
+        '<i class="fa-solid fa-calculator"></i> Nuevo Registro';
+      document.getElementById("editRowId").value = "";
+
+      // Fix: Usar fecha local en lugar de UTC (evita salto de día después de las 7PM)
+      const today = new Date();
+      const yyyy = today.getFullYear();
+      const mm = String(today.getMonth() + 1).padStart(2, "0");
+      const dd = String(today.getDate()).padStart(2, "0");
+      document.getElementById("inputDate").value = `${yyyy}-${mm}-${dd}`;
+
+      document.getElementById("btnSubmit").innerHTML =
+        '<i class="fa-solid fa-plus"></i> Agregar';
+      window.setDropdownValue("GASTO NO FRECUENTE");
     }
-    return;
-  }
-  
-  registerChartPluginsOnce();
-  const isMobileSummary = window.innerWidth <= 768;
-
-  // ── Extract available years ──────────────────────────────────────────────
-  const yearsSet = new Set();
-  data.forEach(s => {
-    if (!s.monthYear) return;
-    const parts = s.monthYear.split(' ');
-    if (parts.length >= 2) yearsSet.add(parts[parts.length - 1]);
-  });
-  const years = ['Todos'].concat(Array.from(yearsSet).sort().reverse());
-
-  // Default to most-recent year on first render
-  if (!summarySelectedYear || !years.includes(summarySelectedYear)) {
-    summarySelectedYear = years[0];
   }
 
-  // ── Year Chips ───────────────────────────────────────────────────────────
-  const chipsEl = document.getElementById('summaryYearChips');
-  if (chipsEl) {
-    chipsEl.innerHTML = '';
-    const yearChipFragment = document.createDocumentFragment();
-    years.forEach(yr => {
-      const btn = document.createElement('button');
-      btn.className = 'year-chip-btn' + (yr === summarySelectedYear ? ' active' : '');
-      btn.textContent = yr;
-      btn.addEventListener('click', () => {
-        summarySelectedYear = yr;
-        renderSummaryTable(summaries);
-      });
-      yearChipFragment.appendChild(btn);
-    });
-    chipsEl.appendChild(yearChipFragment);
-  }
+  function handleFormSubmit(e) {
+    e.preventDefault();
 
-  // ── Filter data for selected year ────────────────────────────────────────
-  const yearData = summarySelectedYear === 'Todos' ? data : data.filter(s => s.monthYear && s.monthYear.endsWith(summarySelectedYear));
+    const rawAmount = inputAmount.value;
+    const finalAmount = calculateExpression(rawAmount);
 
-  // ── KPI Aggregates ───────────────────────────────────────────────────────
-  let totFreqInc = 0, totNoFreqInc = 0, totFreqExp = 0, totNoFreqExp = 0;
-  yearData.forEach(s => {
-    totFreqInc   += Number(s.freqIncome)    || 0;
-    totNoFreqInc += Number(s.nonFreqIncome) || 0;
-    totFreqExp   += Math.abs(Number(s.freqExpense))    || 0;
-    totNoFreqExp += Math.abs(Number(s.nonFreqExpense)) || 0;
-  });
-  const totIncome  = totFreqInc + totNoFreqInc;
-  const totExpense = totFreqExp + totNoFreqExp;
-  const netBalance = totIncome - totExpense;
-  const savingsRate = totIncome > 0 ? Math.round((netBalance / totIncome) * 100) : 0;
+    if (finalAmount === null || isNaN(finalAmount)) {
+      showToast("Por favor ingrese un monto válido", "error");
+      return;
+    }
 
-  // Update KPI cards
-  const kpiIncome = document.getElementById('kpiTotalIncome');
-  const kpiExpense = document.getElementById('kpiTotalExpense');
-  const kpiNet = document.getElementById('kpiNetBalance');
-  const kpiSR = document.getElementById('kpiSavingsRate');
-
-  if (kpiIncome) kpiIncome.textContent = 'S/ ' + totIncome.toFixed(2);
-  if (kpiExpense) kpiExpense.textContent = 'S/ ' + totExpense.toFixed(2);
-  
-  if (kpiNet) {
-    kpiNet.textContent = (netBalance >= 0 ? '+ ' : '- ') + 'S/ ' + Math.abs(netBalance).toFixed(2);
-    kpiNet.style.color = netBalance >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
-  }
-  
-  if (kpiSR) {
-    kpiSR.textContent = savingsRate + '%';
-    kpiSR.style.color = savingsRate >= 0 ? 'var(--accent-yellow)' : 'var(--accent-red)';
-  }
-
-  // Get dynamic colors depending on theme
-  const getVar = (name) => getComputedStyle(document.body).getPropertyValue(name).trim() || '#fff';
-  const textBodyColor = getVar('--text-primary');
-  const textMuted = getVar('--text-secondary');
-  const dashBg = getVar('--bg-dark');
-  const pieBorderColor = getVar('--bg-card');
-
-  // ── Pie: Income Breakdown ────────────────────────────────────────────────
-  const pieIncCtx = document.getElementById('pieIncomeChart');
-  if (pieIncCtx) {
-    if (dashPieIncome) dashPieIncome.destroy();
-    dashPieIncome = new Chart(pieIncCtx.getContext('2d'), {
-      type: 'doughnut',
-      data: {
-        labels: ['Ing. Frecuente', 'Ing. No Frec.'],
-        datasets: [{
-          data: [totFreqInc, totNoFreqInc],
-          backgroundColor: ['#00D26A', '#2D9CDB'],   // Frequent green vs non-frequent blue
-          borderColor: pieBorderColor,
-          borderWidth: 2,
-          hoverOffset: 10
-        }]
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        cutout: isMobileSummary ? '58%' : '54%',
-        plugins: {
-          legend: { position: 'bottom', labels: { color: textMuted, font: { size: isMobileSummary ? 10 : 11, family: 'DM Sans', weight: '700' }, boxWidth: 10, padding: isMobileSummary ? 8 : 14 } },
-          tooltip: { backgroundColor: dashBg === '#f3f8ef' ? 'rgba(255,255,255,0.97)' : 'rgba(15,17,16,0.97)', padding: 12, cornerRadius: 8, bodyColor: textBodyColor, titleColor: textBodyColor, borderColor: getVar('--border-color'), borderWidth: 1,
-            callbacks: { label: ctx => ` S/ ${ctx.parsed.toFixed(2)}` }
-          },
-          datalabels: { 
-            display: true,
-            color: '#E9F2E9',
-            formatter: (value, ctx) => {
-              let sum = 0;
-              let dataArr = ctx.chart.data.datasets[0].data;
-              dataArr.forEach(data => { sum += Number(data); });
-              if (sum === 0) return '0%';
-              let percentage = (value * 100 / sum).toFixed(1) + "%";
-              return value > 0 && (!isMobileSummary || (value * 100 / sum) >= 5) ? percentage : '';
-            },
-            font: { weight: 'bold', size: isMobileSummary ? 11 : 13, family: 'DM Sans' }
-          }
-        },
-        animation: { animateRotate: true, animateScale: true, duration: 900, easing: 'easeOutCubic' }
+    let amountToSend = finalAmount;
+    if (rawAmount.match(/[=+\-*/]/)) {
+      if (rawAmount.trim().startsWith("=")) {
+        amountToSend = rawAmount.trim();
+      } else {
+        if (rawAmount.match(/[+\-*/]/)) {
+          amountToSend = "=" + rawAmount.trim();
+        }
       }
-    });
+    }
+
+    const txData = {
+      date: document.getElementById("inputDate").value,
+      amount: amountToSend,
+      detail: document.getElementById("inputDetail").value,
+      type: inputType.value,
+    };
+
+    const rowId = document.getElementById("editRowId").value;
+
+    const submitBtn = document.getElementById("btnSubmit");
+    const originalText = submitBtn.innerHTML;
+    submitBtn.innerHTML =
+      '<i class="fa-solid fa-spinner fa-spin"></i> Procesando...';
+    submitBtn.disabled = true;
+
+    const finishEdit = (updatedTransaction) => {
+      submitBtn.innerHTML = originalText;
+      submitBtn.disabled = false;
+      addModal.classList.add("hidden");
+      addForm.reset();
+
+      // ACTUALIZACIÓN LOCAL: Buscar y reemplazar en el cache
+      if (updatedTransaction) {
+        const index = transactionCache.findIndex(
+          (t) => t.rowId === updatedTransaction.rowId,
+        );
+        if (index > -1) {
+          transactionCache[index] = updatedTransaction;
+          sortAndRender();
+          loadSummary();
+        }
+      }
+      showToast("Cambios guardados correctamente", "success");
+    };
+
+    const finishAdd = (newTransaction) => {
+      submitBtn.innerHTML = originalText;
+      submitBtn.disabled = false;
+      addModal.classList.add("hidden");
+      addForm.reset();
+
+      if (newTransaction) {
+        transactionCache.unshift(newTransaction);
+        sortAndRender();
+      }
+      showToast("Registro agregado correctamente", "success");
+    };
+
+    const handleError = (error) => {
+      submitBtn.innerHTML = originalText;
+      submitBtn.disabled = false;
+      showToast("Error: " + error.message, "error");
+    };
+
+    if (editMode && rowId) {
+      google.script.run
+        .withSuccessHandler(finishEdit)
+        .withFailureHandler(handleError)
+        .editTransaction(rowId, txData);
+    } else {
+      google.script.run
+        .withSuccessHandler(finishAdd)
+        .withFailureHandler(handleError)
+        .addTransactionOptimized(txData, currentMonth, currentYear);
+    }
   }
 
-  // ── Pie: Expense Breakdown ───────────────────────────────────────────────
-  const pieExpCtx = document.getElementById('pieExpenseChart');
-  if (pieExpCtx) {
-    if (dashPieExpense) dashPieExpense.destroy();
-    dashPieExpense = new Chart(pieExpCtx.getContext('2d'), {
-      type: 'doughnut',
-      data: {
-        labels: ['Gasto Frec.', 'Gasto No Frec.'],
-        datasets: [{
-          data: [totFreqExp, totNoFreqExp],
-          backgroundColor: ['#FF4D57', '#FFC145'],   // Frequent red vs non-frequent gold
-          borderColor: pieBorderColor,
-          borderWidth: 2,
-          hoverOffset: 10
-        }]
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        cutout: isMobileSummary ? '58%' : '54%',
-        plugins: {
-          legend: { position: 'bottom', labels: { color: textMuted, font: { size: isMobileSummary ? 10 : 11, family: 'DM Sans', weight: '700' }, boxWidth: 10, padding: isMobileSummary ? 8 : 14 } },
-          tooltip: { backgroundColor: dashBg === '#f3f8ef' ? 'rgba(255,255,255,0.97)' : 'rgba(15,17,16,0.97)', padding: 12, cornerRadius: 8, bodyColor: textBodyColor, titleColor: textBodyColor, borderColor: getVar('--border-color'), borderWidth: 1,
-            callbacks: { label: ctx => ` S/ ${ctx.parsed.toFixed(2)}` }
-          },
-          datalabels: { 
-            display: true,
-            color: '#E9F2E9',
-            formatter: (value, ctx) => {
-              let sum = 0;
-              let dataArr = ctx.chart.data.datasets[0].data;
-              dataArr.forEach(data => { sum += Number(data); });
-              if (sum === 0) return '0%';
-              let percentage = (value * 100 / sum).toFixed(1) + "%";
-              return value > 0 && (!isMobileSummary || (value * 100 / sum) >= 5) ? percentage : '';
-            },
-            font: { weight: 'bold', size: isMobileSummary ? 11 : 13, family: 'DM Sans' }
-          }
-        },
-        animation: { animateRotate: true, animateScale: true, duration: 900, easing: 'easeOutCubic' }
-      }
-    });
+  // ============================================
+  // SUMMARY
+  // ============================================
+  function loadSummary() {
+    showSummarySkeleton();
+
+    google.script.run
+      .withSuccessHandler((data) => {
+        summaries = data;
+        renderSummaryTable(data);
+      })
+      .withFailureHandler((error) => {
+        showToast("Error al cargar resumen: " + error.message, "error");
+      })
+      .getMonthlySummaryData();
   }
 
-  // ── Bar: Monthly Trend ───────────────────────────────────────────────────
-  const trendCtx = document.getElementById('summaryTrendChart');
-  if (trendCtx) {
-    if (dashTrend) dashTrend.destroy();
-    const mLabels = monthNames.map(m => m.substring(0, 3));
-    const incData = new Array(12).fill(0);
-    const expData = new Array(12).fill(0);
+  // Dashboard chart instances
+  var dashPieIncome = null;
+  var dashPieExpense = null;
+  var dashTrend = null;
+  var summarySelectedYear = null;
 
-    yearData.forEach(s => {
-      const mName = s.monthYear.split(' ')[0].toLowerCase().substring(0, 3);
-      const idx = monthNames.findIndex(m => m.toLowerCase().startsWith(mName));
-      if (idx > -1) {
-        incData[idx] += (Number(s.freqIncome) || 0) + (Number(s.nonFreqIncome) || 0);
-        expData[idx] += Math.abs(Number(s.totalExpense) || 0);
+  function renderSummaryTable(data) {
+    const tbodyElement = document.getElementById("summaryTableBody");
+    if (!data || data.length === 0) {
+      if (tbodyElement) {
+        tbodyElement.innerHTML =
+          '<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--text-secondary);">No hay datos</td></tr>';
       }
-    });
-
-    const netData = incData.map((v, i) => v - expData[i]);
+      return;
+    }
 
     registerChartPluginsOnce();
-    dashTrend = new Chart(trendCtx.getContext('2d'), {
-      type: 'bar',
-      data: {
-        labels: mLabels,
-        datasets: [
-          { label: 'Ingresos', data: incData, backgroundColor: '#00D26A', borderRadius: 6, barPercentage: 0.6, order: 2 },
-          { label: 'Gastos',   data: expData, backgroundColor: '#FF4D57',  borderRadius: 6, barPercentage: 0.6, order: 2 },
-          {
-            label: 'Neto', data: netData, type: 'line',
-            borderColor: '#2D9CDB', backgroundColor: 'rgba(45, 156, 219, 0.16)',
-            borderWidth: 2.5, pointRadius: 4, pointBackgroundColor: '#2D9CDB',
-            pointBorderColor: '#0f1110', pointBorderWidth: 2,
-            tension: 0.4, fill: true, order: 1
-          }
-        ]
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: {
-          legend: { position: 'top', labels: { color: textMuted, font: { size: 11, family: 'DM Sans' }, boxWidth: 12, padding: 14, usePointStyle: true, pointStyle: 'circle' } },
-          tooltip: {
-            backgroundColor: dashBg === '#f3f8ef' ? 'rgba(255,255,255,0.97)' : 'rgba(15,17,16,0.97)', titleColor: textBodyColor, bodyColor: textMuted,
-            borderColor: getVar('--border-color'), borderWidth: 1, padding: 12, cornerRadius: 8,
-            callbacks: {
-              label: ctx => ` ${ctx.dataset.label}: S/ ${ctx.parsed.y.toFixed(2)}`,
-              labelColor: ctx => ({ borderColor: ctx.dataset.borderColor || ctx.dataset.backgroundColor, backgroundColor: ctx.dataset.borderColor || ctx.dataset.backgroundColor })
-            }
+    const isMobileSummary = window.innerWidth <= 768;
+
+    // ── Extract available years ──────────────────────────────────────────────
+    const yearsSet = new Set();
+    data.forEach((s) => {
+      if (!s.monthYear) return;
+      const parts = s.monthYear.split(" ");
+      if (parts.length >= 2) yearsSet.add(parts[parts.length - 1]);
+    });
+    const years = ["Todos"].concat(Array.from(yearsSet).sort().reverse());
+
+    // Default to most-recent year on first render
+    if (!summarySelectedYear || !years.includes(summarySelectedYear)) {
+      summarySelectedYear = years[0];
+    }
+
+    // ── Year Chips ───────────────────────────────────────────────────────────
+    const chipsEl = document.getElementById("summaryYearChips");
+    if (chipsEl) {
+      chipsEl.innerHTML = "";
+      const yearChipFragment = document.createDocumentFragment();
+      years.forEach((yr) => {
+        const btn = document.createElement("button");
+        btn.className =
+          "year-chip-btn" + (yr === summarySelectedYear ? " active" : "");
+        btn.textContent = yr;
+        btn.addEventListener("click", () => {
+          summarySelectedYear = yr;
+          renderSummaryTable(summaries);
+        });
+        yearChipFragment.appendChild(btn);
+      });
+      chipsEl.appendChild(yearChipFragment);
+    }
+
+    // ── Filter data for selected year ────────────────────────────────────────
+    const yearData =
+      summarySelectedYear === "Todos"
+        ? data
+        : data.filter(
+            (s) => s.monthYear && s.monthYear.endsWith(summarySelectedYear),
+          );
+
+    // ── KPI Aggregates ───────────────────────────────────────────────────────
+    let totFreqInc = 0,
+      totNoFreqInc = 0,
+      totFreqExp = 0,
+      totNoFreqExp = 0;
+    yearData.forEach((s) => {
+      totFreqInc += Number(s.freqIncome) || 0;
+      totNoFreqInc += Number(s.nonFreqIncome) || 0;
+      totFreqExp += Math.abs(Number(s.freqExpense)) || 0;
+      totNoFreqExp += Math.abs(Number(s.nonFreqExpense)) || 0;
+    });
+    const totIncome = totFreqInc + totNoFreqInc;
+    const totExpense = totFreqExp + totNoFreqExp;
+    const netBalance = totIncome - totExpense;
+    const savingsRate =
+      totIncome > 0 ? Math.round((netBalance / totIncome) * 100) : 0;
+
+    // Update KPI cards
+    const kpiIncome = document.getElementById("kpiTotalIncome");
+    const kpiExpense = document.getElementById("kpiTotalExpense");
+    const kpiNet = document.getElementById("kpiNetBalance");
+    const kpiSR = document.getElementById("kpiSavingsRate");
+
+    if (kpiIncome) kpiIncome.textContent = "S/ " + totIncome.toFixed(2);
+    if (kpiExpense) kpiExpense.textContent = "S/ " + totExpense.toFixed(2);
+
+    if (kpiNet) {
+      kpiNet.textContent =
+        (netBalance >= 0 ? "+ " : "- ") +
+        "S/ " +
+        Math.abs(netBalance).toFixed(2);
+      kpiNet.style.color =
+        netBalance >= 0 ? "var(--accent-green)" : "var(--accent-red)";
+    }
+
+    if (kpiSR) {
+      kpiSR.textContent = savingsRate + "%";
+      kpiSR.style.color =
+        savingsRate >= 0 ? "var(--accent-yellow)" : "var(--accent-red)";
+    }
+
+    // Get dynamic colors depending on theme
+    const getVar = (name) =>
+      getComputedStyle(document.body).getPropertyValue(name).trim() || "#fff";
+    const textBodyColor = getVar("--text-primary");
+    const textMuted = getVar("--text-secondary");
+    const dashBg = getVar("--bg-dark");
+    const pieBorderColor = getVar("--bg-card");
+
+    // ── Pie: Income Breakdown ────────────────────────────────────────────────
+    const pieIncCtx = document.getElementById("pieIncomeChart");
+    if (pieIncCtx) {
+      if (dashPieIncome) dashPieIncome.destroy();
+      dashPieIncome = new Chart(pieIncCtx.getContext("2d"), {
+        type: "doughnut",
+        data: {
+          labels: ["Ing. Frecuente", "Ing. No Frec."],
+          datasets: [
+            {
+              data: [totFreqInc, totNoFreqInc],
+              backgroundColor: ["#00D26A", "#2D9CDB"], // Frequent green vs non-frequent blue
+              borderColor: pieBorderColor,
+              borderWidth: 2,
+              hoverOffset: 10,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: isMobileSummary ? "58%" : "54%",
+          plugins: {
+            legend: {
+              position: "bottom",
+              labels: {
+                color: textMuted,
+                font: {
+                  size: isMobileSummary ? 10 : 11,
+                  family: "DM Sans",
+                  weight: "700",
+                },
+                boxWidth: 10,
+                padding: isMobileSummary ? 8 : 14,
+              },
+            },
+            tooltip: {
+              backgroundColor:
+                dashBg === "#f3f8ef"
+                  ? "rgba(255,255,255,0.97)"
+                  : "rgba(15,17,16,0.97)",
+              padding: 12,
+              cornerRadius: 8,
+              bodyColor: textBodyColor,
+              titleColor: textBodyColor,
+              borderColor: getVar("--border-color"),
+              borderWidth: 1,
+              callbacks: { label: (ctx) => ` S/ ${ctx.parsed.toFixed(2)}` },
+            },
+            datalabels: {
+              display: true,
+              color: "#E9F2E9",
+              formatter: (value, ctx) => {
+                let sum = 0;
+                let dataArr = ctx.chart.data.datasets[0].data;
+                dataArr.forEach((data) => {
+                  sum += Number(data);
+                });
+                if (sum === 0) return "0%";
+                let percentage = ((value * 100) / sum).toFixed(1) + "%";
+                return value > 0 &&
+                  (!isMobileSummary || (value * 100) / sum >= 5)
+                  ? percentage
+                  : "";
+              },
+              font: {
+                weight: "bold",
+                size: isMobileSummary ? 11 : 13,
+                family: "DM Sans",
+              },
+            },
           },
-          datalabels: { display: false }
+          animation: {
+            animateRotate: true,
+            animateScale: true,
+            duration: 900,
+            easing: "easeOutCubic",
+          },
         },
-        scales: {
-          y: { beginAtZero: true, grid: { color: getVar('--border-color-light'), drawBorder: false }, ticks: { color: textMuted, font: { family: 'DM Sans', size: 10 }, callback: v => 'S/' + (v >= 1000 ? (v/1000).toFixed(1)+'k' : v) }, border: { display: false } },
-          x: { grid: { display: false }, ticks: { color: textMuted, font: { family: 'DM Sans', size: 10 } }, border: { display: false } }
+      });
+    }
+
+    // ── Pie: Expense Breakdown ───────────────────────────────────────────────
+    const pieExpCtx = document.getElementById("pieExpenseChart");
+    if (pieExpCtx) {
+      if (dashPieExpense) dashPieExpense.destroy();
+      dashPieExpense = new Chart(pieExpCtx.getContext("2d"), {
+        type: "doughnut",
+        data: {
+          labels: ["Gasto Frec.", "Gasto No Frec."],
+          datasets: [
+            {
+              data: [totFreqExp, totNoFreqExp],
+              backgroundColor: ["#FF4D57", "#FFC145"], // Frequent red vs non-frequent gold
+              borderColor: pieBorderColor,
+              borderWidth: 2,
+              hoverOffset: 10,
+            },
+          ],
         },
-        interaction: { mode: 'index', intersect: false },
-        animation: { duration: 700, easing: 'easeOutQuart' }
-      }
-    });
-  }
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: isMobileSummary ? "58%" : "54%",
+          plugins: {
+            legend: {
+              position: "bottom",
+              labels: {
+                color: textMuted,
+                font: {
+                  size: isMobileSummary ? 10 : 11,
+                  family: "DM Sans",
+                  weight: "700",
+                },
+                boxWidth: 10,
+                padding: isMobileSummary ? 8 : 14,
+              },
+            },
+            tooltip: {
+              backgroundColor:
+                dashBg === "#f3f8ef"
+                  ? "rgba(255,255,255,0.97)"
+                  : "rgba(15,17,16,0.97)",
+              padding: 12,
+              cornerRadius: 8,
+              bodyColor: textBodyColor,
+              titleColor: textBodyColor,
+              borderColor: getVar("--border-color"),
+              borderWidth: 1,
+              callbacks: { label: (ctx) => ` S/ ${ctx.parsed.toFixed(2)}` },
+            },
+            datalabels: {
+              display: true,
+              color: "#E9F2E9",
+              formatter: (value, ctx) => {
+                let sum = 0;
+                let dataArr = ctx.chart.data.datasets[0].data;
+                dataArr.forEach((data) => {
+                  sum += Number(data);
+                });
+                if (sum === 0) return "0%";
+                let percentage = ((value * 100) / sum).toFixed(1) + "%";
+                return value > 0 &&
+                  (!isMobileSummary || (value * 100) / sum >= 5)
+                  ? percentage
+                  : "";
+              },
+              font: {
+                weight: "bold",
+                size: isMobileSummary ? 11 : 13,
+                family: "DM Sans",
+              },
+            },
+          },
+          animation: {
+            animateRotate: true,
+            animateScale: true,
+            duration: 900,
+            easing: "easeOutCubic",
+          },
+        },
+      });
+    }
 
-  // ── Detail Table ─────────────────────────────────────────────────────────
-  const tbody = document.getElementById('summaryTableBody');
-  if (tbody) {
-    tbody.innerHTML = '';
-    const fragment = document.createDocumentFragment();
-    
-    const detailRows = yearData.map(row => {
-      const freqIncome = Number(row.freqIncome) || 0;
-      const nonFreqIncome = Number(row.nonFreqIncome) || 0;
-      const freqExpense = Math.abs(Number(row.freqExpense) || 0);
-      const nonFreqExpense = Math.abs(Number(row.nonFreqExpense) || 0);
-      const totalExpense = Math.abs(Number(row.totalExpense) || 0);
-      const netMonthly = Number(row.netMonthly) || 0;
-      return {
-        row,
-        freqIncome,
-        nonFreqIncome,
-        totalIncome: freqIncome + nonFreqIncome,
-        freqExpense,
-        nonFreqExpense,
-        totalExpense,
-        netMonthly
-      };
-    });
+    // ── Bar: Monthly Trend ───────────────────────────────────────────────────
+    const trendCtx = document.getElementById("summaryTrendChart");
+    if (trendCtx) {
+      if (dashTrend) dashTrend.destroy();
+      const mLabels = monthNames.map((m) => m.substring(0, 3));
+      const incData = new Array(12).fill(0);
+      const expData = new Array(12).fill(0);
 
-    const maxBars = detailRows.reduce((max, item) => ({
-      freqIncome: Math.max(max.freqIncome, item.freqIncome),
-      nonFreqIncome: Math.max(max.nonFreqIncome, item.nonFreqIncome),
-      freqExpense: Math.max(max.freqExpense, item.freqExpense),
-      nonFreqExpense: Math.max(max.nonFreqExpense, item.nonFreqExpense),
-      totalExpense: Math.max(max.totalExpense, item.totalExpense),
-      netMonthly: Math.max(max.netMonthly, Math.abs(item.netMonthly))
-    }), { freqIncome: 0, nonFreqIncome: 0, freqExpense: 0, nonFreqExpense: 0, totalExpense: 0, netMonthly: 0 });
+      yearData.forEach((s) => {
+        const mName = s.monthYear.split(" ")[0].toLowerCase().substring(0, 3);
+        const idx = monthNames.findIndex((m) =>
+          m.toLowerCase().startsWith(mName),
+        );
+        if (idx > -1) {
+          incData[idx] +=
+            (Number(s.freqIncome) || 0) + (Number(s.nonFreqIncome) || 0);
+          expData[idx] += Math.abs(Number(s.totalExpense) || 0);
+        }
+      });
 
-    const pct = (value, max) => max ? Math.min(100, (Math.abs(Number(value) || 0) / max) * 100) : 0;
-    const getTop = (key) => detailRows.reduce((best, item) => !best || item[key] > best[key] ? item : best, null);
+      const netData = incData.map((v, i) => v - expData[i]);
 
-    const detailStrip = document.getElementById('detailSummaryStrip');
-    if (detailStrip) {
-      const bestNet = detailRows.reduce((best, item) => !best || item.netMonthly > best.netMonthly ? item : best, null);
-      const worstNet = detailRows.reduce((worst, item) => !worst || item.netMonthly < worst.netMonthly ? item : worst, null);
-      const topIncome = getTop('totalIncome');
-      const topExpense = getTop('totalExpense');
-      const totalIncome = detailRows.reduce((sum, item) => sum + item.totalIncome, 0);
-      const totalExpense = detailRows.reduce((sum, item) => sum + item.totalExpense, 0);
-      const totalNet = detailRows.reduce((sum, item) => sum + item.netMonthly, 0);
-      const avgIncome = detailRows.length ? totalIncome / detailRows.length : 0;
-      const avgExpense = detailRows.length ? totalExpense / detailRows.length : 0;
-      const avgNet = detailRows.length ? totalNet / detailRows.length : 0;
-      const savingsRate = totalIncome > 0 ? Math.round((totalNet / totalIncome) * 100) : 0;
-      detailStrip.innerHTML = `
+      registerChartPluginsOnce();
+      dashTrend = new Chart(trendCtx.getContext("2d"), {
+        type: "bar",
+        data: {
+          labels: mLabels,
+          datasets: [
+            {
+              label: "Ingresos",
+              data: incData,
+              backgroundColor: "#00D26A",
+              borderRadius: 6,
+              barPercentage: 0.6,
+              order: 2,
+            },
+            {
+              label: "Gastos",
+              data: expData,
+              backgroundColor: "#FF4D57",
+              borderRadius: 6,
+              barPercentage: 0.6,
+              order: 2,
+            },
+            {
+              label: "Neto",
+              data: netData,
+              type: "line",
+              borderColor: "#2D9CDB",
+              backgroundColor: "rgba(45, 156, 219, 0.16)",
+              borderWidth: 2.5,
+              pointRadius: 4,
+              pointBackgroundColor: "#2D9CDB",
+              pointBorderColor: "#0f1110",
+              pointBorderWidth: 2,
+              tension: 0.4,
+              fill: true,
+              order: 1,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              position: "top",
+              labels: {
+                color: textMuted,
+                font: { size: 11, family: "DM Sans" },
+                boxWidth: 12,
+                padding: 14,
+                usePointStyle: true,
+                pointStyle: "circle",
+              },
+            },
+            tooltip: {
+              backgroundColor:
+                dashBg === "#f3f8ef"
+                  ? "rgba(255,255,255,0.97)"
+                  : "rgba(15,17,16,0.97)",
+              titleColor: textBodyColor,
+              bodyColor: textMuted,
+              borderColor: getVar("--border-color"),
+              borderWidth: 1,
+              padding: 12,
+              cornerRadius: 8,
+              callbacks: {
+                label: (ctx) =>
+                  ` ${ctx.dataset.label}: S/ ${ctx.parsed.y.toFixed(2)}`,
+                labelColor: (ctx) => ({
+                  borderColor:
+                    ctx.dataset.borderColor || ctx.dataset.backgroundColor,
+                  backgroundColor:
+                    ctx.dataset.borderColor || ctx.dataset.backgroundColor,
+                }),
+              },
+            },
+            datalabels: { display: false },
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              grid: {
+                color: getVar("--border-color-light"),
+                drawBorder: false,
+              },
+              ticks: {
+                color: textMuted,
+                font: { family: "DM Sans", size: 10 },
+                callback: (v) =>
+                  "S/" + (v >= 1000 ? (v / 1000).toFixed(1) + "k" : v),
+              },
+              border: { display: false },
+            },
+            x: {
+              grid: { display: false },
+              ticks: {
+                color: textMuted,
+                font: { family: "DM Sans", size: 10 },
+              },
+              border: { display: false },
+            },
+          },
+          interaction: { mode: "index", intersect: false },
+          animation: { duration: 700, easing: "easeOutQuart" },
+        },
+      });
+    }
+
+    // ── Detail Table ─────────────────────────────────────────────────────────
+    const tbody = document.getElementById("summaryTableBody");
+    if (tbody) {
+      tbody.innerHTML = "";
+      const fragment = document.createDocumentFragment();
+
+      const detailRows = yearData.map((row) => {
+        const freqIncome = Number(row.freqIncome) || 0;
+        const nonFreqIncome = Number(row.nonFreqIncome) || 0;
+        const freqExpense = Math.abs(Number(row.freqExpense) || 0);
+        const nonFreqExpense = Math.abs(Number(row.nonFreqExpense) || 0);
+        const totalExpense = Math.abs(Number(row.totalExpense) || 0);
+        const netMonthly = Number(row.netMonthly) || 0;
+        return {
+          row,
+          freqIncome,
+          nonFreqIncome,
+          totalIncome: freqIncome + nonFreqIncome,
+          freqExpense,
+          nonFreqExpense,
+          totalExpense,
+          netMonthly,
+        };
+      });
+
+      const maxBars = detailRows.reduce(
+        (max, item) => ({
+          freqIncome: Math.max(max.freqIncome, item.freqIncome),
+          nonFreqIncome: Math.max(max.nonFreqIncome, item.nonFreqIncome),
+          freqExpense: Math.max(max.freqExpense, item.freqExpense),
+          nonFreqExpense: Math.max(max.nonFreqExpense, item.nonFreqExpense),
+          totalExpense: Math.max(max.totalExpense, item.totalExpense),
+          netMonthly: Math.max(max.netMonthly, Math.abs(item.netMonthly)),
+        }),
+        {
+          freqIncome: 0,
+          nonFreqIncome: 0,
+          freqExpense: 0,
+          nonFreqExpense: 0,
+          totalExpense: 0,
+          netMonthly: 0,
+        },
+      );
+
+      const pct = (value, max) =>
+        max ? Math.min(100, (Math.abs(Number(value) || 0) / max) * 100) : 0;
+      const getTop = (key) =>
+        detailRows.reduce(
+          (best, item) => (!best || item[key] > best[key] ? item : best),
+          null,
+        );
+
+      const detailStrip = document.getElementById("detailSummaryStrip");
+      if (detailStrip) {
+        const bestNet = detailRows.reduce(
+          (best, item) =>
+            !best || item.netMonthly > best.netMonthly ? item : best,
+          null,
+        );
+        const worstNet = detailRows.reduce(
+          (worst, item) =>
+            !worst || item.netMonthly < worst.netMonthly ? item : worst,
+          null,
+        );
+        const topIncome = getTop("totalIncome");
+        const topExpense = getTop("totalExpense");
+        const totalIncome = detailRows.reduce(
+          (sum, item) => sum + item.totalIncome,
+          0,
+        );
+        const totalExpense = detailRows.reduce(
+          (sum, item) => sum + item.totalExpense,
+          0,
+        );
+        const totalNet = detailRows.reduce(
+          (sum, item) => sum + item.netMonthly,
+          0,
+        );
+        const avgIncome = detailRows.length
+          ? totalIncome / detailRows.length
+          : 0;
+        const avgExpense = detailRows.length
+          ? totalExpense / detailRows.length
+          : 0;
+        const avgNet = detailRows.length ? totalNet / detailRows.length : 0;
+        const savingsRate =
+          totalIncome > 0 ? Math.round((totalNet / totalIncome) * 100) : 0;
+        detailStrip.innerHTML = `
         <div class="detail-mini-card detail-mini-period">
           <span class="detail-mini-label">Periodo</span>
           <strong>${detailRows.length} meses</strong>
-          <small class="detail-mini-note">${summarySelectedYear || 'Todos'}</small>
+          <small class="detail-mini-note">${summarySelectedYear || "Todos"}</small>
         </div>
         <div class="detail-mini-card detail-mini-income">
           <span class="detail-mini-label">Ingreso prom.</span>
@@ -1816,37 +2321,39 @@ function renderSummaryTable(data) {
         </div>
         <div class="detail-mini-card detail-mini-income">
           <span class="detail-mini-label">Mayor ingreso</span>
-          <strong>${topIncome ? topIncome.row.monthYear : '-'}</strong>
-          <small class="detail-mini-note">${topIncome ? formatMoney(topIncome.totalIncome) : '-'}</small>
+          <strong>${topIncome ? topIncome.row.monthYear : "-"}</strong>
+          <small class="detail-mini-note">${topIncome ? formatMoney(topIncome.totalIncome) : "-"}</small>
         </div>
         <div class="detail-mini-card detail-mini-expense">
           <span class="detail-mini-label">Mayor gasto</span>
-          <strong>${topExpense ? topExpense.row.monthYear : '-'}</strong>
-          <small class="detail-mini-note">${topExpense ? formatMoney(-topExpense.totalExpense) : '-'}</small>
+          <strong>${topExpense ? topExpense.row.monthYear : "-"}</strong>
+          <small class="detail-mini-note">${topExpense ? formatMoney(-topExpense.totalExpense) : "-"}</small>
         </div>
         <div class="detail-mini-card detail-mini-net">
           <span class="detail-mini-label">Mejor neto</span>
-          <strong>${bestNet ? bestNet.row.monthYear : '-'}</strong>
-          <small class="detail-mini-note">${bestNet ? formatMoney(bestNet.netMonthly) : '-'}</small>
+          <strong>${bestNet ? bestNet.row.monthYear : "-"}</strong>
+          <small class="detail-mini-note">${bestNet ? formatMoney(bestNet.netMonthly) : "-"}</small>
         </div>
         <div class="detail-mini-card detail-mini-risk">
           <span class="detail-mini-label">Neto más bajo</span>
-          <strong>${worstNet ? worstNet.row.monthYear : '-'}</strong>
-          <small class="detail-mini-note">${worstNet ? formatMoney(worstNet.netMonthly) : '-'}</small>
+          <strong>${worstNet ? worstNet.row.monthYear : "-"}</strong>
+          <small class="detail-mini-note">${worstNet ? formatMoney(worstNet.netMonthly) : "-"}</small>
         </div>
       `;
-    }
+      }
 
-    let previousYear = '';
-    detailRows.forEach(item => {
-      const { row } = item;
-      const [monthName, rowYear = ''] = String(row.monthYear || '').split(' ');
-      const isYearBreak = rowYear && previousYear && rowYear !== previousYear;
-      previousYear = rowYear || previousYear;
+      let previousYear = "";
+      detailRows.forEach((item) => {
+        const { row } = item;
+        const [monthName, rowYear = ""] = String(row.monthYear || "").split(
+          " ",
+        );
+        const isYearBreak = rowYear && previousYear && rowYear !== previousYear;
+        previousYear = rowYear || previousYear;
 
-      const tr = document.createElement('tr');
-      if (isYearBreak) tr.classList.add('summary-year-break');
-      tr.innerHTML = `
+        const tr = document.createElement("tr");
+        if (isYearBreak) tr.classList.add("summary-year-break");
+        tr.innerHTML = `
         <td>
           <span class="summary-month">
             <strong>${monthName || row.monthYear}</strong>
@@ -1873,352 +2380,517 @@ function renderSummaryTable(data) {
           <span class="summary-data-bar"></span>
           <span class="summary-data-value">${formatMoney(row.totalExpense)}</span>
         </td>
-        <td class="${item.netMonthly >= 0 ? 'amount-positive' : 'amount-negative'} summary-data-cell ${item.netMonthly >= 0 ? 'summary-net-positive' : 'summary-net-negative'}" style="--bar:${pct(item.netMonthly, maxBars.netMonthly).toFixed(1)}%;">
+        <td class="${item.netMonthly >= 0 ? "amount-positive" : "amount-negative"} summary-data-cell ${item.netMonthly >= 0 ? "summary-net-positive" : "summary-net-negative"}" style="--bar:${pct(item.netMonthly, maxBars.netMonthly).toFixed(1)}%;">
           <span class="summary-data-bar"></span>
           <span class="summary-data-value">${formatMoney(row.netMonthly)}</span>
         </td>
       `;
-      fragment.appendChild(tr);
-    });
-    tbody.appendChild(fragment);
-  }
-  
-  // Refresh header stats & interannual chart
-  sortAndRender();
-  setTimeout(renderCharts, 80);
-}
-
-
-// ============================================
-// THEME LOGIC
-// ============================================
-function initTheme() {
-  if (currentTheme === 'light') {
-    document.documentElement.setAttribute('data-theme', 'light');
-  } else {
-    document.documentElement.removeAttribute('data-theme');
-  }
-}
-
-function toggleTheme() {
-  currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
-  localStorage.setItem('bucks_theme', currentTheme);
-  
-  initTheme();
-  
-  // Re-render charts so they pick up new CSS variables
-  if (document.getElementById('view-summary').classList.contains('active')) {
-    renderSummaryTable(summaries);
-  }
-}
-
-// ============================================
-// FREQ INCOME LOGIC
-// ============================================
-window.openFreqIncomeModal = function() {
-  const currMonthYearStr = monthNames[currentMonth] + " " + currentYear;
-  freqIncomeMonthLabel.textContent = `(${currMonthYearStr})`;
-  
-  let currentVal = 0;
-  if (summaries && summaries.length > 0) {
-    const summaryRow = summaries.find(s => s.monthYear === currMonthYearStr);
-    if (summaryRow) currentVal = Number(summaryRow.freqIncome) || 0;
-  }
-  
-  inputFreqIncomeAmount.value = currentVal.toFixed(2);
-  freqIncomeModal.classList.remove('hidden');
-};
-
-function handleFreqIncomeSubmit(e) {
-  e.preventDefault();
-  
-  const amount = Number(inputFreqIncomeAmount.value);
-  if (isNaN(amount) || amount < 0) {
-    showToast('Ingrese un monto válido referencialmente', 'error');
-    return;
-  }
-  
-  const currMonthYearStr = monthNames[currentMonth] + " " + currentYear;
-  
-  const submitBtn = document.getElementById('btnSaveFreqIncome');
-  const ogText = submitBtn.innerHTML;
-  submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
-  submitBtn.disabled = true;
-  
-  google.script.run
-    .withSuccessHandler((res) => {
-      submitBtn.innerHTML = ogText;
-      submitBtn.disabled = false;
-      freqIncomeModal.classList.add('hidden');
-      
-      // Optimizacion: actualizar array local summaries inmediatamente
-      if (summaries) {
-        const row = summaries.find(s => s.monthYear === currMonthYearStr);
-        if (row) {
-           row.freqIncome = amount;
-           // force re-calc local fields
-           row.totalIncome = amount + Number(row.nonFreqIncome);
-           row.netMonthly = row.totalIncome + Number(row.totalExpense);
-        }
-      }
-      
-      showToast(res.message || 'Actualizado correctamente', 'success');
-      renderSummaryTable(summaries); // Refresca y trigger sortAndRender headers
-    })
-    .withFailureHandler((err) => {
-      submitBtn.innerHTML = ogText;
-      submitBtn.disabled = false;
-      showToast('Error: ' + err.message, 'error');
-    })
-    .updateFreqIncome(currMonthYearStr, amount);
-}
-
-// ============================================
-// CHARTS - INTERANUAL
-// ============================================
-function renderCharts() {
-  const chartContainer = document.getElementById('interannualChartContainer');
-  if (!chartContainer) return;
-  if (!summaries || summaries.length === 0) return;
-
-  const metric = currentChartMetric || 'comparison';
-  const isMobile = window.innerWidth <= 768;
-  const viewportW = Math.max(window.innerWidth || 390, 320);
-
-  // Build year-keyed data
-  const yearsData = {}, incomeData = {}, expenseData = {};
-  const allYears = new Set();
-
-  summaries.forEach(s => {
-    if (!s.monthYear) return;
-    const parts = s.monthYear.split(' ');
-    if (parts.length < 2) return;
-    const mName = parts[0], yearStr = parts[parts.length - 1];
-    if (!yearStr.match(/^\d{4}$/)) return;
-    const mIdx = monthNames.findIndex(m => m.toLowerCase().startsWith(mName.toLowerCase().substring(0, 3)));
-    if (mIdx < 0) return;
-    allYears.add(yearStr);
-    if (!yearsData[yearStr])   yearsData[yearStr]   = new Array(12).fill(0);
-    if (!incomeData[yearStr])  incomeData[yearStr]  = new Array(12).fill(0);
-    if (!expenseData[yearStr]) expenseData[yearStr] = new Array(12).fill(0);
-    incomeData[yearStr][mIdx]  = (Number(s.freqIncome) || 0) + (Number(s.nonFreqIncome) || 0);
-    expenseData[yearStr][mIdx] = Math.abs(Number(s.totalExpense) || 0);
-    const mm = {
-      totalExpense: Math.abs(Number(s.totalExpense)),
-      freqExpense: Math.abs(Number(s.freqExpense)),
-      nonFreqExpense: Math.abs(Number(s.nonFreqExpense)),
-      totalIncome: incomeData[yearStr][mIdx],
-      freqIncome: Number(s.freqIncome) || 0,
-      nonFreqIncome: Number(s.nonFreqIncome) || 0,
-      netMonthly: Number(s.netMonthly) || 0
-    };
-    yearsData[yearStr][mIdx] = mm[metric] ?? 0;
-  });
-
-  const sortedYears = Array.from(allYears).sort();
-  // Always use full 12-month labels for monthly views
-  let mLabels = monthNames.map(m => m.substring(0, 3));
-  
-  const palette = [
-    { main: '#2D9CDB', light: '#78C6EF' },
-    { main: '#00D26A', light: '#70E7AA' },
-    { main: '#FF4D57', light: '#FF9AA0' },
-    { main: '#FFC145', light: '#FFD98A' },
-    { main: '#A855F7', light: '#C99CFF' },
-    { main: '#FF8A00', light: '#FFB35C' }
-  ];
-
-  let datasets = [];
-
-  if (metric === 'comparison') {
-    if (summarySelectedYear === 'Todos' || !summarySelectedYear) {
-      // OVERVIEW: X = Years, aggregate all months per year
-      mLabels = sortedYears.slice();
-      const yearlyIncomes  = sortedYears.map(yr => incomeData[yr].reduce((a,b) => a+b, 0));
-      const yearlyExpenses = sortedYears.map(yr => expenseData[yr].reduce((a,b) => a+b, 0));
-      const yearlyNets     = yearlyIncomes.map((inc, i) => inc - yearlyExpenses[i]);
-
-      datasets.push({ label: 'Ingresos Totales', data: yearlyIncomes,
-        backgroundColor: '#00D26A', borderColor: '#00D26A', borderWidth: 1, borderRadius: 4, order: 2, maxBarThickness: isMobile ? 18 : 55 });
-      datasets.push({ label: 'Gastos Totales', data: yearlyExpenses.map(v => -v),
-        backgroundColor: '#FF4D57', borderColor: '#FF4D57', borderWidth: 1, borderRadius: 4, order: 2, maxBarThickness: isMobile ? 18 : 55 });
-      datasets.push({ label: 'Balance Neto', data: yearlyNets, type: 'line',
-        borderColor: '#2D9CDB', backgroundColor: 'rgba(45,156,219,0.20)', borderWidth: 3,
-        pointRadius: 5, pointBackgroundColor: '#2D9CDB', tension: 0.4, fill: true, order: 1 });
-    } else {
-      // SPECIFIC YEAR: X = Months
-      const yr = summarySelectedYear;
-      if (allYears.has(yr)) {
-        datasets.push({ label: `Ingresos ${yr}`, data: incomeData[yr],
-          backgroundColor: '#00D26A', borderColor: '#00D26A', borderWidth: 1, borderRadius: 4, order: 2, maxBarThickness: isMobile ? 10 : 40 });
-        datasets.push({ label: `Gastos ${yr}`, data: expenseData[yr].map(v => -v),
-          backgroundColor: '#FF4D57', borderColor: '#FF4D57', borderWidth: 1, borderRadius: 4, order: 2, maxBarThickness: isMobile ? 10 : 40 });
-        const netVals = incomeData[yr].map((v, j) => v - expenseData[yr][j]);
-        datasets.push({ label: `Neto ${yr}`, data: netVals, type: 'line',
-          borderColor: '#2D9CDB', backgroundColor: 'rgba(45,156,219,0.20)', borderWidth: 3,
-          pointRadius: 5, pointBackgroundColor: '#2D9CDB', tension: 0.4, fill: true, order: 1 });
-      }
-    }
-  } else {
-    // SPECIFIC METRIC: X = Months, one bar series per year
-    const metricColors = {
-      totalExpense: palette[2], freqExpense: palette[2], nonFreqExpense: palette[3],
-      totalIncome: palette[1], freqIncome: palette[0], nonFreqIncome: palette[4], netMonthly: palette[5]
-    };
-
-    sortedYears.forEach((yr, i) => {
-      const isHighlighted = summarySelectedYear === 'Todos' || summarySelectedYear === yr;
-      let c;
-      if (summarySelectedYear === 'Todos') {
-        c = sortedYears.length === 1 ? (metricColors[metric] || palette[0]) : palette[i % palette.length];
-      } else {
-        c = isHighlighted ? (metricColors[metric] || palette[0]) : { main: '#56645e' };
-      }
-      datasets.push({
-        label: yr,
-        data: yearsData[yr],
-        type: 'bar',
-        backgroundColor: isHighlighted ? c.main : c.main + '40',
-        borderColor: c.main,
-        borderWidth: isHighlighted ? 1.5 : 0,
-        borderRadius: 4,
-        barPercentage: isMobile ? 0.52 : 0.7,
-        categoryPercentage: isMobile ? 0.64 : 0.8,
-        maxBarThickness: isMobile ? 9 : 36
+        fragment.appendChild(tr);
       });
-    });
+      tbody.appendChild(fragment);
+    }
+
+    // Refresh header stats & interannual chart
+    sortAndRender();
+    setTimeout(renderCharts, 80);
   }
 
-  // ── Destroy previous chart ──
-  if (myChart) { myChart.destroy(); myChart = null; }
+  // ============================================
+  // THEME LOGIC
+  // ============================================
+  function initTheme() {
+    if (currentTheme === "light") {
+      document.documentElement.setAttribute("data-theme", "light");
+    } else {
+      document.documentElement.removeAttribute("data-theme");
+    }
+  }
 
-  const titles = {
-    comparison:    'Comparativa de ingresos vs gastos por año',
-    totalExpense:  'Comparativa de gastos totales por año',
-    freqExpense:   'Comparativa de Gasto Frecuente por año',
-    nonFreqExpense:'Comparativa de Gasto No Frecuente por año',
-    totalIncome:   'Comparativa de ingresos totales por año',
-    freqIncome:    'Comparativa de Ingreso Frecuente por año',
-    nonFreqIncome: 'Comparativa de Ingreso No Frecuente por año',
-    netMonthly:    'Evolución del balance neto anual'
+  function toggleTheme() {
+    currentTheme = currentTheme === "dark" ? "light" : "dark";
+    localStorage.setItem("bucks_theme", currentTheme);
+
+    initTheme();
+
+    // Re-render charts so they pick up new CSS variables
+    if (document.getElementById("view-summary").classList.contains("active")) {
+      renderSummaryTable(summaries);
+    }
+  }
+
+  // ============================================
+  // FREQ INCOME LOGIC
+  // ============================================
+  window.openFreqIncomeModal = function () {
+    const currMonthYearStr = monthNames[currentMonth] + " " + currentYear;
+    freqIncomeMonthLabel.textContent = `(${currMonthYearStr})`;
+
+    let currentVal = 0;
+    if (summaries && summaries.length > 0) {
+      const summaryRow = summaries.find(
+        (s) => s.monthYear === currMonthYearStr,
+      );
+      if (summaryRow) currentVal = Number(summaryRow.freqIncome) || 0;
+    }
+
+    inputFreqIncomeAmount.value = currentVal.toFixed(2);
+    freqIncomeModal.classList.remove("hidden");
   };
 
-  // ── Calculate required canvas width ──
-  const containerH = isMobile ? 324 : 370; // inner canvas height in px
-  const dataLen = mLabels.length || 1;
-  const barsPerLabel = datasets.filter(d => d.type === 'bar' || !d.type).length || 1;
-  const mobileBaseW = Math.max(viewportW - 44, 320);
-  let requiredW;
+  function handleFreqIncomeSubmit(e) {
+    e.preventDefault();
 
-  if (metric === 'comparison' && (summarySelectedYear === 'Todos' || !summarySelectedYear)) {
-    // Few bars (one per year) - fit naturally but give room for data labels
-    requiredW = isMobile
-      ? Math.max(mobileBaseW, sortedYears.length * 74)
-      : Math.max(420, sortedYears.length * 130);
-  } else if (metric === 'comparison') {
-    // 12 months × 2 bar datasets
-    requiredW = isMobile
-      ? Math.max(mobileBaseW, dataLen * barsPerLabel * 13 + 58)
-      : Math.max(620, dataLen * barsPerLabel * 40 + 100);
-  } else {
-    // 12 months × N years (up to 5)
-    requiredW = isMobile
-      ? Math.max(mobileBaseW, dataLen * barsPerLabel * 9 + 64)
-      : Math.max(720, dataLen * barsPerLabel * 34 + 120);
+    const amount = Number(inputFreqIncomeAmount.value);
+    if (isNaN(amount) || amount < 0) {
+      showToast("Ingrese un monto válido referencialmente", "error");
+      return;
+    }
+
+    const currMonthYearStr = monthNames[currentMonth] + " " + currentYear;
+
+    const submitBtn = document.getElementById("btnSaveFreqIncome");
+    const ogText = submitBtn.innerHTML;
+    submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+    submitBtn.disabled = true;
+
+    google.script.run
+      .withSuccessHandler((res) => {
+        submitBtn.innerHTML = ogText;
+        submitBtn.disabled = false;
+        freqIncomeModal.classList.add("hidden");
+
+        // Optimizacion: actualizar array local summaries inmediatamente
+        if (summaries) {
+          const row = summaries.find((s) => s.monthYear === currMonthYearStr);
+          if (row) {
+            row.freqIncome = amount;
+            // force re-calc local fields
+            row.totalIncome = amount + Number(row.nonFreqIncome);
+            row.netMonthly = row.totalIncome + Number(row.totalExpense);
+          }
+        }
+
+        showToast(res.message || "Actualizado correctamente", "success");
+        renderSummaryTable(summaries); // Refresca y trigger sortAndRender headers
+      })
+      .withFailureHandler((err) => {
+        submitBtn.innerHTML = ogText;
+        submitBtn.disabled = false;
+        showToast("Error: " + err.message, "error");
+      })
+      .updateFreqIncome(currMonthYearStr, amount);
   }
 
-  // ── Rebuild container markup with explicit pixel dimensions ──
-  const innerStyle = isMobile 
-    ? `position:relative; height:${containerH}px; min-width:${requiredW}px; width:${requiredW}px;`
-    : `position:relative; height:${containerH}px; width:100%;`;
-  const chartTitle = (titles[metric] || 'Gráfico') + (summarySelectedYear && summarySelectedYear !== 'Todos' ? ` (${summarySelectedYear})` : '');
-  chartContainer.innerHTML = `
-    ${isMobile ? `
+  // ============================================
+  // CHARTS - INTERANUAL
+  // ============================================
+  function renderCharts() {
+    const chartContainer = document.getElementById("interannualChartContainer");
+    if (!chartContainer) return;
+    if (!summaries || summaries.length === 0) return;
+
+    const metric = currentChartMetric || "comparison";
+    const isMobile = window.innerWidth <= 768;
+    const viewportW = Math.max(window.innerWidth || 390, 320);
+
+    // Build year-keyed data
+    const yearsData = {},
+      incomeData = {},
+      expenseData = {};
+    const allYears = new Set();
+
+    summaries.forEach((s) => {
+      if (!s.monthYear) return;
+      const parts = s.monthYear.split(" ");
+      if (parts.length < 2) return;
+      const mName = parts[0],
+        yearStr = parts[parts.length - 1];
+      if (!yearStr.match(/^\d{4}$/)) return;
+      const mIdx = monthNames.findIndex((m) =>
+        m.toLowerCase().startsWith(mName.toLowerCase().substring(0, 3)),
+      );
+      if (mIdx < 0) return;
+      allYears.add(yearStr);
+      if (!yearsData[yearStr]) yearsData[yearStr] = new Array(12).fill(0);
+      if (!incomeData[yearStr]) incomeData[yearStr] = new Array(12).fill(0);
+      if (!expenseData[yearStr]) expenseData[yearStr] = new Array(12).fill(0);
+      incomeData[yearStr][mIdx] =
+        (Number(s.freqIncome) || 0) + (Number(s.nonFreqIncome) || 0);
+      expenseData[yearStr][mIdx] = Math.abs(Number(s.totalExpense) || 0);
+      const mm = {
+        totalExpense: Math.abs(Number(s.totalExpense)),
+        freqExpense: Math.abs(Number(s.freqExpense)),
+        nonFreqExpense: Math.abs(Number(s.nonFreqExpense)),
+        totalIncome: incomeData[yearStr][mIdx],
+        freqIncome: Number(s.freqIncome) || 0,
+        nonFreqIncome: Number(s.nonFreqIncome) || 0,
+        netMonthly: Number(s.netMonthly) || 0,
+      };
+      yearsData[yearStr][mIdx] = mm[metric] ?? 0;
+    });
+
+    const sortedYears = Array.from(allYears).sort();
+    // Always use full 12-month labels for monthly views
+    let mLabels = monthNames.map((m) => m.substring(0, 3));
+
+    const palette = [
+      { main: "#2D9CDB", light: "#78C6EF" },
+      { main: "#00D26A", light: "#70E7AA" },
+      { main: "#FF4D57", light: "#FF9AA0" },
+      { main: "#FFC145", light: "#FFD98A" },
+      { main: "#A855F7", light: "#C99CFF" },
+      { main: "#FF8A00", light: "#FFB35C" },
+    ];
+
+    let datasets = [];
+
+    if (metric === "comparison") {
+      if (summarySelectedYear === "Todos" || !summarySelectedYear) {
+        // OVERVIEW: X = Years, aggregate all months per year
+        mLabels = sortedYears.slice();
+        const yearlyIncomes = sortedYears.map((yr) =>
+          incomeData[yr].reduce((a, b) => a + b, 0),
+        );
+        const yearlyExpenses = sortedYears.map((yr) =>
+          expenseData[yr].reduce((a, b) => a + b, 0),
+        );
+        const yearlyNets = yearlyIncomes.map(
+          (inc, i) => inc - yearlyExpenses[i],
+        );
+
+        datasets.push({
+          label: "Ingresos Totales",
+          data: yearlyIncomes,
+          backgroundColor: "#00D26A",
+          borderColor: "#00D26A",
+          borderWidth: 1,
+          borderRadius: 4,
+          order: 2,
+          maxBarThickness: isMobile ? 18 : 55,
+        });
+        datasets.push({
+          label: "Gastos Totales",
+          data: yearlyExpenses.map((v) => -v),
+          backgroundColor: "#FF4D57",
+          borderColor: "#FF4D57",
+          borderWidth: 1,
+          borderRadius: 4,
+          order: 2,
+          maxBarThickness: isMobile ? 18 : 55,
+        });
+        datasets.push({
+          label: "Balance Neto",
+          data: yearlyNets,
+          type: "line",
+          borderColor: "#2D9CDB",
+          backgroundColor: "rgba(45,156,219,0.20)",
+          borderWidth: 3,
+          pointRadius: 5,
+          pointBackgroundColor: "#2D9CDB",
+          tension: 0.4,
+          fill: true,
+          order: 1,
+        });
+      } else {
+        // SPECIFIC YEAR: X = Months
+        const yr = summarySelectedYear;
+        if (allYears.has(yr)) {
+          datasets.push({
+            label: `Ingresos ${yr}`,
+            data: incomeData[yr],
+            backgroundColor: "#00D26A",
+            borderColor: "#00D26A",
+            borderWidth: 1,
+            borderRadius: 4,
+            order: 2,
+            maxBarThickness: isMobile ? 10 : 40,
+          });
+          datasets.push({
+            label: `Gastos ${yr}`,
+            data: expenseData[yr].map((v) => -v),
+            backgroundColor: "#FF4D57",
+            borderColor: "#FF4D57",
+            borderWidth: 1,
+            borderRadius: 4,
+            order: 2,
+            maxBarThickness: isMobile ? 10 : 40,
+          });
+          const netVals = incomeData[yr].map((v, j) => v - expenseData[yr][j]);
+          datasets.push({
+            label: `Neto ${yr}`,
+            data: netVals,
+            type: "line",
+            borderColor: "#2D9CDB",
+            backgroundColor: "rgba(45,156,219,0.20)",
+            borderWidth: 3,
+            pointRadius: 5,
+            pointBackgroundColor: "#2D9CDB",
+            tension: 0.4,
+            fill: true,
+            order: 1,
+          });
+        }
+      }
+    } else {
+      // SPECIFIC METRIC: X = Months, one bar series per year
+      const metricColors = {
+        totalExpense: palette[2],
+        freqExpense: palette[2],
+        nonFreqExpense: palette[3],
+        totalIncome: palette[1],
+        freqIncome: palette[0],
+        nonFreqIncome: palette[4],
+        netMonthly: palette[5],
+      };
+
+      sortedYears.forEach((yr, i) => {
+        const isHighlighted =
+          summarySelectedYear === "Todos" || summarySelectedYear === yr;
+        let c;
+        if (summarySelectedYear === "Todos") {
+          c =
+            sortedYears.length === 1
+              ? metricColors[metric] || palette[0]
+              : palette[i % palette.length];
+        } else {
+          c = isHighlighted
+            ? metricColors[metric] || palette[0]
+            : { main: "#56645e" };
+        }
+        datasets.push({
+          label: yr,
+          data: yearsData[yr],
+          type: "bar",
+          backgroundColor: isHighlighted ? c.main : c.main + "40",
+          borderColor: c.main,
+          borderWidth: isHighlighted ? 1.5 : 0,
+          borderRadius: 4,
+          barPercentage: isMobile ? 0.52 : 0.7,
+          categoryPercentage: isMobile ? 0.64 : 0.8,
+          maxBarThickness: isMobile ? 9 : 36,
+        });
+      });
+    }
+
+    // ── Destroy previous chart ──
+    if (myChart) {
+      myChart.destroy();
+      myChart = null;
+    }
+
+    const titles = {
+      comparison: "Comparativa de ingresos vs gastos por año",
+      totalExpense: "Comparativa de gastos totales por año",
+      freqExpense: "Comparativa de Gasto Frecuente por año",
+      nonFreqExpense: "Comparativa de Gasto No Frecuente por año",
+      totalIncome: "Comparativa de ingresos totales por año",
+      freqIncome: "Comparativa de Ingreso Frecuente por año",
+      nonFreqIncome: "Comparativa de Ingreso No Frecuente por año",
+      netMonthly: "Evolución del balance neto anual",
+    };
+
+    // ── Calculate required canvas width ──
+    const containerH = isMobile ? 324 : 370; // inner canvas height in px
+    const dataLen = mLabels.length || 1;
+    const barsPerLabel =
+      datasets.filter((d) => d.type === "bar" || !d.type).length || 1;
+    const mobileBaseW = Math.max(viewportW - 44, 320);
+    let requiredW;
+
+    if (
+      metric === "comparison" &&
+      (summarySelectedYear === "Todos" || !summarySelectedYear)
+    ) {
+      // Few bars (one per year) - fit naturally but give room for data labels
+      requiredW = isMobile
+        ? Math.max(mobileBaseW, sortedYears.length * 74)
+        : Math.max(420, sortedYears.length * 130);
+    } else if (metric === "comparison") {
+      // 12 months × 2 bar datasets
+      requiredW = isMobile
+        ? Math.max(mobileBaseW, dataLen * barsPerLabel * 13 + 58)
+        : Math.max(620, dataLen * barsPerLabel * 40 + 100);
+    } else {
+      // 12 months × N years (up to 5)
+      requiredW = isMobile
+        ? Math.max(mobileBaseW, dataLen * barsPerLabel * 9 + 64)
+        : Math.max(720, dataLen * barsPerLabel * 34 + 120);
+    }
+
+    // ── Rebuild container markup with explicit pixel dimensions ──
+    const innerStyle = isMobile
+      ? `position:relative; height:${containerH}px; min-width:${requiredW}px; width:${requiredW}px;`
+      : `position:relative; height:${containerH}px; width:100%;`;
+    const chartTitle =
+      (titles[metric] || "Gráfico") +
+      (summarySelectedYear && summarySelectedYear !== "Todos"
+        ? ` (${summarySelectedYear})`
+        : "");
+    chartContainer.innerHTML = `
+    ${
+      isMobile
+        ? `
       <div class="chart-mobile-head">
         <div>
           <span class="chart-mobile-kicker">Comparativa</span>
           <h4>${chartTitle}</h4>
         </div>
-        ${requiredW > mobileBaseW + 8 ? '<span class="chart-swipe-hint"><i class="fa-solid fa-arrows-left-right"></i> Desliza</span>' : ''}
-      </div>` : ''}
+        ${requiredW > mobileBaseW + 8 ? '<span class="chart-swipe-hint"><i class="fa-solid fa-arrows-left-right"></i> Desliza</span>' : ""}
+      </div>`
+        : ""
+    }
     <div class="chart-scroll-wrapper">
       <div id="annualChartInner" style="${innerStyle}">
         <canvas id="annualChart"></canvas>
       </div>
     </div>`;
 
-  const canvas = document.getElementById('annualChart');
-  registerChartPluginsOnce();
+    const canvas = document.getElementById("annualChart");
+    registerChartPluginsOnce();
 
-  const getVar = (n) => getComputedStyle(document.body).getPropertyValue(n).trim() || '#fff';
-  const textBodyColor = getVar('--text-primary');
-  const textMuted     = getVar('--text-secondary');
-  const tooltipBg     = currentTheme === 'light' ? 'rgba(255,255,255,0.95)' : 'rgba(15,17,16,0.95)';
-  myChart = new Chart(canvas.getContext('2d'), {
-    type: 'bar',
-    data: { labels: mLabels, datasets },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      layout: { padding: { top: isMobile ? 18 : 30, bottom: isMobile ? 4 : 10, left: isMobile ? 0 : 10, right: isMobile ? 2 : 10 } },
-      plugins: {
-        legend: {
-          display: true, position: 'top', align: isMobile ? 'start' : 'center',
-          labels: { color: textMuted, usePointStyle: true, pointStyle: 'circle',
-            font: { size: isMobile ? 10 : 12, family: 'DM Sans', weight: '700' }, padding: isMobile ? 8 : 15, boxWidth: 8 }
+    const getVar = (n) =>
+      getComputedStyle(document.body).getPropertyValue(n).trim() || "#fff";
+    const textBodyColor = getVar("--text-primary");
+    const textMuted = getVar("--text-secondary");
+    const tooltipBg =
+      currentTheme === "light"
+        ? "rgba(255,255,255,0.95)"
+        : "rgba(15,17,16,0.95)";
+    myChart = new Chart(canvas.getContext("2d"), {
+      type: "bar",
+      data: { labels: mLabels, datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        layout: {
+          padding: {
+            top: isMobile ? 18 : 42,
+            bottom: isMobile ? 4 : 28,
+            left: isMobile ? 0 : 10,
+            right: isMobile ? 2 : 10,
+          },
         },
-        title: {
-          display: !isMobile,
-          text: chartTitle,
-          color: textBodyColor,
-          align: 'center',
-          font: { size: 18, weight: '700', family: 'DM Sans' },
-          padding: { bottom: 24 }
+        plugins: {
+          chartLabelGuidePlugin: {
+            enabled: !isMobile,
+            color:
+              currentTheme === "light"
+                ? "rgba(17,20,17,0.34)"
+                : "rgba(247,248,244,0.38)",
+            labelBg:
+              currentTheme === "light"
+                ? "rgba(255,255,255,0.92)"
+                : "rgba(2,4,3,0.78)",
+            labelBorder:
+              currentTheme === "light"
+                ? "rgba(0,0,0,0.10)"
+                : "rgba(255,255,255,0.10)",
+            labelColor: currentTheme === "light" ? "#111411" : "#f7f8f4",
+            elbowLength: 6,
+          },
+          legend: {
+            display: true,
+            position: "top",
+            align: isMobile ? "start" : "center",
+            labels: {
+              color: textMuted,
+              usePointStyle: true,
+              pointStyle: "circle",
+              font: {
+                size: isMobile ? 10 : 12,
+                family: "DM Sans",
+                weight: "700",
+              },
+              padding: isMobile ? 8 : 15,
+              boxWidth: 8,
+            },
+          },
+          title: {
+            display: !isMobile,
+            text: chartTitle,
+            color: textBodyColor,
+            align: "center",
+            font: { size: 18, weight: "700", family: "DM Sans" },
+            padding: { bottom: 24 },
+          },
+          tooltip: {
+            backgroundColor: tooltipBg,
+            titleColor: textBodyColor,
+            bodyColor: textMuted,
+            borderColor: getVar("--border-color"),
+            borderWidth: 1,
+            padding: 12,
+            cornerRadius: 8,
+            callbacks: {
+              label: (ctx) =>
+                ` ${ctx.dataset.label}: S/ ${Math.abs(ctx.parsed.y).toFixed(2)}`,
+            },
+          },
+          datalabels: {
+            display: false,
+            anchor: "end",
+            align: (ctx) =>
+              Number(ctx.dataset.data[ctx.dataIndex]) >= 0 ? "top" : "bottom",
+            offset: (ctx) =>
+              getChartLabelLane(ctx.chart, ctx.datasetIndex).offset,
+            color: currentTheme === "light" ? "#111411" : "#f7f8f4",
+            backgroundColor:
+              currentTheme === "light"
+                ? "rgba(255,255,255,0.92)"
+                : "rgba(2,4,3,0.78)",
+            borderColor:
+              currentTheme === "light"
+                ? "rgba(0,0,0,0.10)"
+                : "rgba(255,255,255,0.10)",
+            borderWidth: 1,
+            borderRadius: 3,
+            padding: { top: 3, right: 5, bottom: 3, left: 5 },
+            font: {
+              size: 11,
+              weight: "800",
+              family: "Segoe UI, Arial, sans-serif",
+            },
+            formatter: (v) =>
+              `${Number(v) < 0 ? "-" : ""}S/${Math.abs(Number(v) || 0).toFixed(0)}`,
+            rotation: 0,
+            textAlign: "center",
+            clamp: true,
+            clip: true,
+          },
         },
-        tooltip: {
-          backgroundColor: tooltipBg, titleColor: textBodyColor, bodyColor: textMuted,
-          borderColor: getVar('--border-color'), borderWidth: 1, padding: 12, cornerRadius: 8,
-          callbacks: { label: ctx => ` ${ctx.dataset.label}: S/ ${Math.abs(ctx.parsed.y).toFixed(2)}` }
+        scales: {
+          y: {
+            beginAtZero: true,
+            grid: { color: getVar("--border-color-light"), drawBorder: false },
+            ticks: {
+              color: textMuted,
+              font: { size: isMobile ? 8 : 11, family: "DM Sans" },
+              maxTicksLimit: isMobile ? 5 : 8,
+              callback: (v) =>
+                "S/" +
+                (Math.abs(v) >= 1000
+                  ? (Math.abs(v) / 1000).toFixed(1) + "k"
+                  : Math.abs(v)),
+            },
+          },
+          x: {
+            grid: { display: false },
+            ticks: {
+              color: textMuted,
+              autoSkip: false,
+              maxRotation: 0,
+              minRotation: 0,
+              font: {
+                size: isMobile ? 9 : 11,
+                family: "DM Sans",
+                weight: isMobile ? "700" : "500",
+              },
+            },
+          },
         },
-        datalabels: {
-          display: ctx => !isMobile && Math.abs(ctx.dataset.data[ctx.dataIndex]) > 0,
-          anchor: 'end',
-          align: 'end',
-          offset: 4,
-          color: currentTheme === 'light' ? '#111411' : '#f7f8f4',
-          backgroundColor: currentTheme === 'light' ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.5)',
-          borderColor: currentTheme === 'light' ? 'rgba(0,0,0,0.08)' : 'transparent',
-          borderWidth: currentTheme === 'light' ? 1 : 0,
-          borderRadius: 4,
-          padding: 3,
-          font: { size: isMobile ? 10 : 11, weight: '700', family: 'DM Sans' },
-          formatter: v => 'S/' + Math.abs(v).toFixed(0),
-          rotation: -45
-        }
+        interaction: { mode: "index", intersect: false },
+        animation: { duration: 1000, easing: "easeOutQuart" },
       },
-      scales: {
-        y: {
-          beginAtZero: true, grid: { color: getVar('--border-color-light'), drawBorder:false },
-          ticks: { 
-            color: textMuted, font:{ size:isMobile?8:11, family:'DM Sans' },
-            maxTicksLimit: isMobile ? 5 : 8,
-            callback: v => 'S/'+(Math.abs(v)>=1000?(Math.abs(v)/1000).toFixed(1)+'k':Math.abs(v)) 
-          }
-        },
-        x: {
-          grid:{ display:false },
-          ticks:{
-            color: textMuted,
-            autoSkip: false,
-            maxRotation: 0,
-            minRotation: 0,
-            font:{ size:isMobile?9:11, family:'DM Sans', weight: isMobile ? '700' : '500' }
-          }
-        }
-      },
-      interaction: { mode:'index', intersect:false },
-      animation: { duration:1000, easing:'easeOutQuart' }
-    }
-  });
-}
+    });
+  }
 </script>
