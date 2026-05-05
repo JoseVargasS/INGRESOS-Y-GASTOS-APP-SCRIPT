@@ -11,6 +11,9 @@ __pycache__/
 *.a
 *.out
 
+# GAS
+.clasp.json
+
 # Dependencies
 node_modules/
 venv/
