@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Bucks Manager - Tests Unitarios</title>
+  <style>
+    body { font-family: monospace; background: #1a1a2e; color: #eee; padding: 20px; }
+    h1 { color: #00d2ff; }
+    .pass { color: #00ff88; }
+    .fail { color: #ff4444; }
+    .suite { margin: 15px 0; padding: 10px; border-left: 3px solid #00d2ff; }
+    .suite h3 { color: #00d2ff; margin: 0 0 8px 0; }
+    #summary { margin-top: 20px; padding: 15px; background: #16213e; border-radius: 8px; font-size: 16px; }
+  </style>
+</head>
+<body>
+  <h1>Bucks Manager - Tests Unitarios</h1>
+  <div id="output"></div>
+  <div id="summary"></div>
+
+<script>
+// ============================================
+// FUNCIONES A TESTEAR (copiadas de Scripts.html)
+// Nota: Estas son funciones puras sin dependencias DOM
+// ============================================
+
+// --- monthNames y mapa precalculado ---
+const monthNames = [
+  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+];
+
+// Opt 8: Mapa precalculado de nombre de mes → índice (O(1) lookup)
+const MONTH_NAME_TO_INDEX = {};
+monthNames.forEach((m, i) => {
+  MONTH_NAME_TO_INDEX[m.toLowerCase().substring(0, 3)] = i;
+});
+
+// Opt 6: Mapa de tipos abreviados (constante, no recrear en cada llamada)
+const ABBREVIATE_TYPE_MAP = {
+  "GASTO NO FRECUENTE": "G. No Frec.",
+  "GASTO FRECUENTE": "G. Frec.",
+  "INGRESO NO FRECUENTE": "Ing. No Frec.",
+  "INGRESO FRECUENTE": "Ing. Frec.",
+};
+
+// Opt 2: Elemento temporal reutilizable para escapeHtml
+const _escapeDiv = document.createElement("div");
+
+// --- Funciones helper ---
+
+function escapeHtml(text) {
+  _escapeDiv.textContent = text;
+  return _escapeDiv.innerHTML;
+}
+
+function highlightSearchMatch(text, searchTerm) {
+  if (!searchTerm || !text) return escapeHtml(text);
+  const escapedText = escapeHtml(text);
+  const escapedTerm = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp(`(${escapedTerm})`, 'gi');
+  return escapedText.replace(regex, '<mark class="search-highlight">$1</mark>');
+}
+
+function abbreviateType(type) {
+  if (!type) return "";
+  return ABBREVIATE_TYPE_MAP[type] || type;
+}
+
+function formatMoney(val) {
+  if (!val) return "S/ 0.00";
+  const num = Number(val);
+  if (isNaN(num)) return val;
+  const prefix = num >= 0 ? "S/ " : "-S/ ";
+  return prefix + Math.abs(num).toFixed(2);
+}
+
+function getValueColorClass(value, type) {
+  if (value === 0) return "amount-neutral";
+  if (type === "income") return value > 0 ? "amount-positive" : "amount-negative";
+  if (type === "expense") return "amount-negative";
+  if (type === "net") return value >= 0 ? "amount-positive" : "amount-negative";
+  return "amount-neutral";
+}
+
+function formatDateToISO(date) {
+  const d = date instanceof Date ? date : new Date(date);
+  if (isNaN(d.getTime())) return "";
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function parseSpanishDate(dateStr) {
+  if (!dateStr) return null;
+  const SPANISH_MONTHS_MAP = {
+    ene: 0, feb: 1, mar: 2, abr: 3, may: 4, jun: 5,
+    jul: 6, ago: 7, sep: 8, oct: 9, nov: 10, dic: 11,
+  };
+  const parts = dateStr.split("-");
+  if (parts.length !== 3) return null;
+  const mIndex = SPANISH_MONTHS_MAP[parts[1].toLowerCase()];
+  if (mIndex === undefined) return null;
+  let yr = parseInt(parts[2]);
+  if (yr < 100) yr += 2000;
+  return new Date(yr, mIndex, parseInt(parts[0]));
+}
+
+function calculateExpression(expression) {
+  if (!expression) return 0;
+  if (/^-?\d+(\.\d+)?$/.test(expression.trim())) {
+    return parseFloat(expression);
+  }
+  const cleanExpr = expression.replace(/[^0-9+\-*/.()]/g, "");
+  if (!cleanExpr) return null;
+  try {
+    return new Function("return " + cleanExpr)();
+  } catch (e) {
+    return null;
+  }
+}
+
+function extractAvailableYears(data) {
+  const yearsSet = new Set();
+  data.forEach((s) => {
+    if (!s.monthYear) return;
+    const parts = s.monthYear.split(" ");
+    if (parts.length >= 2) yearsSet.add(parts[parts.length - 1]);
+  });
+  return ["Todos"].concat(Array.from(yearsSet).sort().reverse());
+}
+
+function filterDataByYear(data, year) {
+  if (year === "Todos" || !year) return data;
+  return data.filter((s) => s.monthYear && s.monthYear.endsWith(year));
+}
+
+function calculateKPIAggregates(yearData) {
+  let totFreqInc = 0, totNoFreqInc = 0, totFreqExp = 0, totNoFreqExp = 0;
+  yearData.forEach((s) => {
+    totFreqInc += Number(s.freqIncome) || 0;
+    totNoFreqInc += Number(s.nonFreqIncome) || 0;
+    totFreqExp += Math.abs(Number(s.freqExpense)) || 0;
+    totNoFreqExp += Math.abs(Number(s.nonFreqExpense)) || 0;
+  });
+  const totIncome = totFreqInc + totNoFreqInc;
+  const totExpense = totFreqExp + totNoFreqExp;
+  const netBalance = totIncome - totExpense;
+  const savingsRate = totIncome > 0 ? Math.round((netBalance / totIncome) * 100) : 0;
+  return {
+    totFreqInc, totNoFreqInc, totFreqExp, totNoFreqExp,
+    totIncome, totExpense, netBalance, savingsRate
+  };
+}
+
+// ============================================
+// MOTOR DE TESTS
+// ============================================
+let totalTests = 0;
+let passedTests = 0;
+let failedTests = 0;
+let currentSuite = "";
+
+function describe(suiteName) {
+  currentSuite = suiteName;
+}
+
+function assert(condition, testName) {
+  totalTests++;
+  const output = document.getElementById("output");
+  if (condition) {
+    passedTests++;
+    output.innerHTML += `<div class="pass">  ✓ ${testName}</div>`;
+  } else {
+    failedTests++;
+    output.innerHTML += `<div class="fail">  ✗ ${testName}</div>`;
+  }
+}
+
+function assertEqual(actual, expected, testName) {
+  const pass = JSON.stringify(actual) === JSON.stringify(expected);
+  if (!pass) {
+    assert(false, `${testName} - Esperado: ${JSON.stringify(expected)}, Obtenido: ${JSON.stringify(actual)}`);
+  } else {
+    assert(true, testName);
+  }
+}
+
+function startSuite(suiteName) {
+  describe(suiteName);
+  const output = document.getElementById("output");
+  output.innerHTML += `<div class="suite"><h3>${suiteName}</h3></div>`;
+}
+
+function finishTests() {
+  const summary = document.getElementById("summary");
+  const color = failedTests === 0 ? "#00ff88" : "#ff4444";
+  const failMsg = failedTests > 0 ? '<br><span class="fail">Fallidos: ' + failedTests + '</span>' : "";
+  summary.innerHTML = '<strong style="color:' + color + '">Resultado: ' + passedTests + '/' + totalTests + ' tests pasaron</strong>' + failMsg;
+}
+
+// ============================================
+// EJECUTAR TESTS
+// ============================================
+window.onload = function() {
+
+  // ── Test: escapeHtml ──
+  startSuite("escapeHtml (Opt 2: reutiliza elemento)");
+  assertEqual(escapeHtml("<scr" + "ipt>alert('xss')</scr" + "ipt>"), "&lt;scr" + "ipt&gt;alert('xss')&lt;/scr" + "ipt&gt;", "Escapa tags HTML");
+  assertEqual(escapeHtml("hello & world"), "hello &amp; world", "Escapa ampersand");
+  assertEqual(escapeHtml("normal text"), "normal text", "Texto normal sin cambios");
+  assertEqual(escapeHtml(""), "", "String vacío");
+  assertEqual(escapeHtml("a<b>c"), "a&lt;b&gt;c", "Menor y mayor que");
+
+  // ── Test: highlightSearchMatch ──
+  startSuite("highlightSearchMatch (resaltado de búsqueda)");
+  assert(highlightSearchMatch("supermercado", "super").includes("<mark"), "Resalta coincidencia");
+  assert(highlightSearchMatch("Supermercado", "super").includes("<mark"), "Case insensitive");
+  assertEqual(highlightSearchMatch("hello", ""), "hello", "Sin searchTerm retorna escapeHtml");
+  assertEqual(highlightSearchMatch("", "test"), "", "Texto vacío retorna vacío");
+  assert(highlightSearchMatch("compra en supermercado", "compra").includes("<mark"), "Resalta primera palabra");
+  assert(!highlightSearchMatch("hello", "xyz").includes("<mark"), "Sin coincidencia no hay mark");
+
+  // ── Test: abbreviateType ──
+  startSuite("abbreviateType (Opt 6: mapa global precalculado)");
+  assertEqual(abbreviateType("GASTO NO FRECUENTE"), "G. No Frec.", "Abrevia Gasto No Frecuente");
+  assertEqual(abbreviateType("GASTO FRECUENTE"), "G. Frec.", "Abrevia Gasto Frecuente");
+  assertEqual(abbreviateType("INGRESO NO FRECUENTE"), "Ing. No Frec.", "Abrevia Ingreso No Frecuente");
+  assertEqual(abbreviateType("INGRESO FRECUENTE"), "Ing. Frec.", "Abrevia Ingreso Frecuente");
+  assertEqual(abbreviateType("OTRO"), "OTRO", "Tipo desconocido se retorna igual");
+  assertEqual(abbreviateType(""), "", "String vacío retorna vacío");
+  assertEqual(abbreviateType(null), "", "null retorna vacío");
+
+  // ── Test: formatMoney ──
+  startSuite("formatMoney (formato de moneda)");
+  assertEqual(formatMoney(100), "S/ 100.00", "Monto positivo");
+  assertEqual(formatMoney(-50), "-S/ 50.00", "Monto negativo");
+  assertEqual(formatMoney(0), "S/ 0.00", "Monto cero");
+  assertEqual(formatMoney(1234.56), "S/ 1234.56", "Monto con decimales");
+  assertEqual(formatMoney(null), "S/ 0.00", "null retorna S/ 0.00");
+  assertEqual(formatMoney(undefined), "S/ 0.00", "undefined retorna S/ 0.00");
+
+  // ── Test: getValueColorClass ──
+  startSuite("getValueColorClass (clases de color para valores)");
+  assertEqual(getValueColorClass(0, "income"), "amount-neutral", "Cero ingreso es neutral");
+  assertEqual(getValueColorClass(0, "expense"), "amount-neutral", "Cero gasto es neutral");
+  assertEqual(getValueColorClass(0, "net"), "amount-neutral", "Cero neto es neutral");
+  assertEqual(getValueColorClass(100, "income"), "amount-positive", "Ingreso positivo");
+  assertEqual(getValueColorClass(-100, "income"), "amount-negative", "Ingreso negativo");
+  assertEqual(getValueColorClass(50, "expense"), "amount-negative", "Gasto siempre negativo");
+  assertEqual(getValueColorClass(100, "net"), "amount-positive", "Neto positivo");
+  assertEqual(getValueColorClass(-100, "net"), "amount-negative", "Neto negativo");
+
+  // ── Test: formatDateToISO ──
+  startSuite("formatDateToISO (formato de fecha)");
+  assertEqual(formatDateToISO(new Date(2026, 0, 15)), "2026-01-15", "Fecha válida");
+  assertEqual(formatDateToISO(new Date(2026, 11, 31)), "2026-12-31", "31 dic");
+  assertEqual(formatDateToISO("invalid"), "", "Fecha inválida retorna vacío");
+
+  // ── Test: parseSpanishDate ──
+  startSuite("parseSpanishDate (parsing de fecha en español)");
+  const parsed = parseSpanishDate("15-ene-26");
+  assert(parsed !== null, "Parsea fecha válida");
+  assertEqual(parsed.getFullYear(), 2026, "Año correcto (2000+)");
+  assertEqual(parsed.getMonth(), 0, "Enero = 0");
+  assertEqual(parsed.getDate(), 15, "Día correcto");
+  assertEqual(parseSpanishDate("28-feb-24").getMonth(), 1, "Feb = 1");
+  assertEqual(parseSpanishDate("1-mar-23").getMonth(), 2, "Mar = 2");
+  assertEqual(parseSpanishDate("invalid"), null, "Formato inválido retorna null");
+  assertEqual(parseSpanishDate(""), null, "Vacío retorna null");
+
+  // ── Test: calculateExpression (Opt 12: fast path) ──
+  startSuite("calculateExpression (Opt 12: fast path para números simples)");
+  assertEqual(calculateExpression("42"), 42, "Número entero simple");
+  assertEqual(calculateExpression("3.14"), 3.14, "Número decimal simple");
+  assertEqual(calculateExpression("-5"), -5, "Número negativo simple");
+  assertEqual(calculateExpression("10+5"), 15, "Suma");
+  assertEqual(calculateExpression("10-3"), 7, "Resta");
+  assertEqual(calculateExpression("4*5"), 20, "Multiplicación");
+  assertEqual(calculateExpression("10/2"), 5, "División");
+  assertEqual(calculateExpression("(10+5)*2"), 30, "Expresión con paréntesis");
+  assertEqual(calculateExpression(""), 0, "Vacío retorna 0");
+  assertEqual(calculateExpression(null), 0, "null retorna 0");
+  assertEqual(calculateExpression("abc"), null, "Texto no numérico retorna null");
+
+  // ── Test: extractAvailableYears ──
+  startSuite("extractAvailableYears (extracción de años)");
+  const sampleData = [
+    { monthYear: "Enero 2025" },
+    { monthYear: "Febrero 2025" },
+    { monthYear: "Marzo 2026" },
+    { monthYear: "Abril 2026" }
+  ];
+  const years = extractAvailableYears(sampleData);
+  assert(years.includes("Todos"), "Incluye 'Todos'");
+  assert(years.includes("2025"), "Incluye 2025");
+  assert(years.includes("2026"), "Incluye 2026");
+  assertEqual(years[0], "Todos", "'Todos' es el primero");
+
+  // ── Test: filterDataByYear ──
+  startSuite("filterDataByYear (filtrado por año)");
+  const filtered = filterDataByYear(sampleData, "2025");
+  assertEqual(filtered.length, 2, "Filtra solo 2025");
+  const allFiltered = filterDataByYear(sampleData, "Todos");
+  assertEqual(allFiltered.length, 4, "'Todos' retorna todos");
+
+  // ── Test: calculateKPIAggregates ──
+  startSuite("calculateKPIAggregates (cálculos KPI)");
+  const kpiData = [
+    { freqIncome: 1000, nonFreqIncome: 200, freqExpense: -300, nonFreqExpense: -100 },
+    { freqIncome: 1000, nonFreqIncome: 0, freqExpense: -300, nonFreqExpense: -200 }
+  ];
+  const kpi = calculateKPIAggregates(kpiData);
+  assertEqual(kpi.totFreqInc, 2000, "Total ingreso frecuente");
+  assertEqual(kpi.totNoFreqInc, 200, "Total ingreso no frecuente");
+  assertEqual(kpi.totFreqExp, 600, "Total gasto frecuente");
+  assertEqual(kpi.totNoFreqExp, 300, "Total gasto no frecuente");
+  assertEqual(kpi.totIncome, 2200, "Total ingresos");
+  assertEqual(kpi.totExpense, 900, "Total gastos");
+  assertEqual(kpi.netBalance, 1300, "Balance neto");
+  assertEqual(kpi.savingsRate, 59, "Tasa de ahorro (~59%)");
+
+  // ── Test: MONTH_NAME_TO_INDEX (Opt 8) ──
+  startSuite("MONTH_NAME_TO_INDEX (Opt 8: mapa precalculado O(1))");
+  assertEqual(MONTH_NAME_TO_INDEX["ene"], 0, "ene = 0");
+  assertEqual(MONTH_NAME_TO_INDEX["feb"], 1, "feb = 1");
+  assertEqual(MONTH_NAME_TO_INDEX["mar"], 2, "mar = 2");
+  assertEqual(MONTH_NAME_TO_INDEX["dic"], 11, "dic = 11");
+  assertEqual(MONTH_NAME_TO_INDEX["xyz"], undefined, "xyz = undefined");
+
+  // ── Test: ABBREVIATE_TYPE_MAP (Opt 6) ──
+  startSuite("ABBREVIATE_TYPE_MAP (Opt 6: mapa global)");
+  assertEqual(ABBREVIATE_TYPE_MAP["GASTO NO FRECUENTE"], "G. No Frec.", "Gasto No Frecuente");
+  assertEqual(ABBREVIATE_TYPE_MAP["INGRESO FRECUENTE"], "Ing. Frec.", "Ingreso Frecuente");
+  assertEqual(Object.keys(ABBREVIATE_TYPE_MAP).length, 4, "Exactamente 4 tipos");
+
+  // Finalizar
+  finishTests();
+};
+</script>
+</body>
+</html>
