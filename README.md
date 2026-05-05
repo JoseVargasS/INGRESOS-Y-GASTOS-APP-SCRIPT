@@ -254,3 +254,52 @@ En Apps Script, actualiza la implementacion web o crea una nueva version. Luego 
 ## Notas de privacidad
 
 Bucks Manager trabaja sobre tu propio Google Sheet. Las operaciones se ejecutan con Google Apps Script dentro de tu cuenta y los datos financieros permanecen en tu Google Drive.
+
+## Estructura del codigo (v4.2 refactorizado)
+
+### Scripts.html - Funciones organizadas
+
+El archivo JavaScript esta organizado en secciones claras:
+
+#### Funciones Helper para Resumen
+- `extractAvailableYears(data)` - Extrae anos disponibles de los datos
+- `renderYearChips(years)` - Renderiza chips de seleccion de ano
+- `filterDataByYear(data, year)` - Filtra datos por ano seleccionado
+- `calculateKPIAggregates(yearData)` - Calcula agregados KPI
+- `updateKPICards(totals)` - Actualiza tarjetas KPI en el DOM
+- `getThemeColors()` - Obtiene colores del tema actual
+- `getBaseTooltipConfig(colors, type)` - Configuracion base para tooltips
+- `getBaseLegendConfig(isMobile, position)` - Configuracion base para leyendas
+- `getPieDatalabelsConfig(isMobile)` - Configuracion de datalabels para tortas
+- `renderPieCharts(totals, colors, isMobile)` - Renderiza graficos de torta
+- `renderMonthlyTrendChart(yearData, colors, isMobile)` - Renderiza grafico de tendencia
+- `calculateDetailRows(yearData)` - Calcula filas de detalle procesadas
+- `calculateMaxBars(detailRows)` - Calcula valores maximos para barras
+- `renderDetailStrip(detailRows)` - Renderiza strip de resumen (mini cards)
+- `renderDetailTableRows(detailRows, maxBars)` - Renderiza filas de tabla
+
+#### Funciones Helper para Fechas
+- `formatDateToISO(date)` - Convierte fecha a formato YYYY-MM-DD
+- `parseSpanishDate(dateStr)` - Convierte "28-feb-26" a objeto Date
+- `transactionDateToISO(transaction)` - Convierte fecha de transaccion a ISO
+
+#### Funciones Helper para Graficos Interanuales
+- `buildInterannualData(metric)` - Construye datos por ano para graficos
+- `buildComparisonDatasets(...)` - Construye datasets para modo comparacion
+- `buildMetricDatasets(...)` - Construye datasets para metricas especificas
+- `calculateChartWidth(...)` - Calcula ancho requerido del grafico
+- `buildChartContainer(...)` - Construye contenedor HTML del grafico
+- `getInterannualChartOptions(...)` - Obtiene opciones del grafico
+
+### Code.gs - Backend optimizado
+
+#### Funciones Helper
+- `findHeaderRow(data, defaultRow)` - Encuentra fila de encabezado en resumen
+- `_addTransactionCore(transactionData)` - Logica central para agregar transacciones
+
+### Beneficios de la refactorizacion
+
+- **Maintenibilidad** - Funciones mas pequenas y enfocadas son mas faciles de entender y modificar
+- **Reutilizacion** - Las funciones helper pueden usarse en multiples caracteristicas
+- **Consistencia** - Configuraciones compartidas aseguran estilo uniforme en graficos
+- **Performance** - Reduccion de duplicacion de codigo y mejor organizacion
