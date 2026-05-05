@@ -1,0 +1,6 @@
+**/*.md
+.gitignore
+.clasp.json
+skills-lock.json
+node_modules/
+.agents/*

@@ -1,7 +1,7 @@
 /**
  * ============================================
  * BUCKS MANAGER
- * Control de Gastos - Google Apps Script
+ * Control de Gastos - Google Apps Script - Desde 04/05/2026 se pushea con clasp!
  * ============================================
  */
 
@@ -11,8 +11,8 @@
 function doGet(e) {
   var template = HtmlService.createTemplateFromFile('Index');
   return template.evaluate()
-      .setTitle('Bucks Manager')
-      .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no');
+    .setTitle('Bucks Manager')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no');
 }
 
 /**
@@ -20,7 +20,7 @@ function doGet(e) {
  */
 function include(filename) {
   return HtmlService.createHtmlOutputFromFile(filename)
-      .getContent();
+    .getContent();
 }
 
 /**
@@ -48,9 +48,9 @@ function formatDateForSheet(dateObj) {
   var day = dateObj.getDate();
   var month = months[dateObj.getMonth()];
   var year = dateObj.getFullYear().toString().substr(-2);
-  
+
   if (day < 10) day = '0' + day;
-  
+
   return day + '-' + month + '-' + year;
 }
 
@@ -88,17 +88,17 @@ function getTransactions(month, year) {
   if (!sheet) {
     throw new Error("No se encontró la hoja 'INGRESOS Y GASTOS'");
   }
-  
+
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return [];
-  
+
   // Obtener datos A2:D
   var range = sheet.getRange(2, 1, lastRow - 1, 4);
   var data = range.getValues();
   var formulas = sheet.getRange(2, 2, lastRow - 1, 1).getFormulas();
-  
+
   var filtered = [];
-  
+
   for (var i = 0; i < data.length; i++) {
     var row = data[i];
     var rawDate = row[0];
@@ -106,46 +106,46 @@ function getTransactions(month, year) {
 
     // Parsear fecha
     if (Object.prototype.toString.call(rawDate) === '[object Date]') {
-       dateObj = rawDate;
+      dateObj = rawDate;
     } else if (typeof rawDate === 'string') {
-       var monthsSpan = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
-       var parts = rawDate.split('-');
-       if (parts.length === 3) {
-           var mIndex = monthsSpan.indexOf(parts[1].toLowerCase());
-           if (mIndex > -1) {
-               var y = parseInt(parts[2]);
-               if (y < 100) y += 2000;
-               dateObj = new Date(y, mIndex, parseInt(parts[0]));
-           } else {
-               var d = new Date(rawDate);
-               if (!isNaN(d.getTime())) dateObj = d;
-           }
-       }
+      var monthsSpan = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+      var parts = rawDate.split('-');
+      if (parts.length === 3) {
+        var mIndex = monthsSpan.indexOf(parts[1].toLowerCase());
+        if (mIndex > -1) {
+          var y = parseInt(parts[2]);
+          if (y < 100) y += 2000;
+          dateObj = new Date(y, mIndex, parseInt(parts[0]));
+        } else {
+          var d = new Date(rawDate);
+          if (!isNaN(d.getTime())) dateObj = d;
+        }
+      }
     }
 
     if (!dateObj || isNaN(dateObj.getTime())) continue;
-    
+
     // Filtrar por mes y año
     if (dateObj.getMonth() === month && dateObj.getFullYear() === year) {
-       var formula = formulas[i][0];
-       
-       filtered.push({
-         rowId: i + 2,
-         date: formatDateForSheet(dateObj),
-         rawDate: dateObj.toISOString(),
-         amount: row[1],
-         formula: formula,
-         detail: row[2] || '',
-         type: row[3] || 'GASTO NO FRECUENTE'
-       });
+      var formula = formulas[i][0];
+
+      filtered.push({
+        rowId: i + 2,
+        date: formatDateForSheet(dateObj),
+        rawDate: dateObj.toISOString(),
+        amount: row[1],
+        formula: formula,
+        detail: row[2] || '',
+        type: row[3] || 'GASTO NO FRECUENTE'
+      });
     }
   }
-  
+
   // Ordenar por ID de fila descendente (más reciente primero)
-  filtered.sort(function(a, b) {
+  filtered.sort(function (a, b) {
     return b.rowId - a.rowId;
   });
-  
+
   return filtered;
 }
 
@@ -156,7 +156,7 @@ function insertRecordChronologically(sheet, dateObj, amount, detail, type) {
   var lastRow = sheet.getLastRow();
   var targetRow = lastRow + 1;
   var targetDateMs = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate()).getTime();
-  
+
   if (lastRow >= 2) {
     var data = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
     for (var i = 0; i < data.length; i++) {
@@ -171,13 +171,13 @@ function insertRecordChronologically(sheet, dateObj, amount, detail, type) {
       }
     }
   }
-  
+
   if (targetRow <= lastRow) {
     sheet.insertRowBefore(targetRow);
   }
-  
+
   var amountIsFormula = String(amount).startsWith('=');
-  
+
   sheet.getRange(targetRow, 1).setValue(dateObj);
   if (amountIsFormula) {
     sheet.getRange(targetRow, 2).setFormula(amount);
@@ -186,7 +186,7 @@ function insertRecordChronologically(sheet, dateObj, amount, detail, type) {
   }
   sheet.getRange(targetRow, 3).setValue(detail);
   sheet.getRange(targetRow, 4).setValue(type);
-  
+
   return targetRow;
 }
 
@@ -208,9 +208,9 @@ function _addTransactionCore(transactionData) {
 
   var sheet = getSheetByName('INGRESOS Y GASTOS');
   if (!sheet) throw new Error("No se encontró la hoja 'INGRESOS Y GASTOS'");
-  
+
   var targetRow = insertRecordChronologically(sheet, dateObj, transactionData.amount, transactionData.detail, transactionData.type);
-  
+
   return { dateObj: dateObj, targetRow: targetRow, sheet: sheet };
 }
 
@@ -234,12 +234,12 @@ function addTransactionOptimized(transactionData, month, year) {
   var dateObj = result.dateObj;
   var targetRow = result.targetRow;
   var sheet = result.sheet;
-  
+
   // Si coincide con el filtro actual, retornar datos
   if (dateObj.getMonth() === month && dateObj.getFullYear() === year) {
     var formula = sheet.getRange(targetRow, 2).getFormula();
     var actualAmount = sheet.getRange(targetRow, 2).getValue();
-    
+
     return {
       rowId: targetRow,
       date: formatDateForSheet(dateObj),
@@ -250,7 +250,7 @@ function addTransactionOptimized(transactionData, month, year) {
       type: transactionData.type
     };
   }
-  
+
   return null;
 }
 
@@ -261,7 +261,7 @@ function addTransactionOptimized(transactionData, month, year) {
 function deleteTransaction(rowId) {
   var sheet = getSheetByName('INGRESOS Y GASTOS');
   if (!sheet) throw new Error("No se encontró la hoja 'INGRESOS Y GASTOS'");
-  
+
   try {
     sheet.deleteRow(rowId);
     return { success: true, message: 'Transacción eliminada correctamente' };
@@ -273,16 +273,16 @@ function deleteTransaction(rowId) {
 function editTransaction(rowId, transactionData) {
   var sheet = getSheetByName('INGRESOS Y GASTOS');
   if (!sheet) throw new Error("No se encontró la hoja 'INGRESOS Y GASTOS'");
-  
+
   var parts = transactionData.date.split('-');
   var dateObj = new Date(parts[0], parts[1] - 1, parts[2]);
-  
+
   try {
     rowId = parseInt(rowId);
-    
+
     // Al editar, la fecha tal vez cambie. Para simplificar, actualizamos los datos in-place en la fila dada.
     var amountIsFormula = String(transactionData.amount).startsWith('=');
-    
+
     sheet.getRange(rowId, 1).setValue(dateObj);
     if (amountIsFormula) {
       sheet.getRange(rowId, 2).setFormula(transactionData.amount);
@@ -291,11 +291,11 @@ function editTransaction(rowId, transactionData) {
     }
     sheet.getRange(rowId, 3).setValue(transactionData.detail);
     sheet.getRange(rowId, 4).setValue(transactionData.type);
-    
+
     // Obtener valores actualizados para el retorno optimizado
     var formula = sheet.getRange(rowId, 2).getFormula();
     var actualAmount = sheet.getRange(rowId, 2).getValue();
-    
+
     return {
       rowId: rowId,
       date: formatDateForSheet(dateObj),
@@ -321,7 +321,7 @@ function moveTransactionUp(rowId) {
   // Solo se pueden mover a partir de la fila 3 (para ignorar intercambiar con cabecera en fila 1 y 2 que puede estar mal)
   // Pero la tabla de transacciones de Apps Script asume header en la 1.
   if (target < 2) return { success: false, message: 'Ya está en la primera fila' };
-  
+
   swapRows(sheet, rowId, target);
   return { success: true, message: 'Movido arriba', newRowId: target };
 }
@@ -332,7 +332,7 @@ function moveTransactionDown(rowId) {
   rowId = parseInt(rowId);
   var target = rowId + 1;
   if (target > sheet.getLastRow()) return { success: false, message: 'Ya está en la última fila' };
-  
+
   swapRows(sheet, rowId, target);
   return { success: true, message: 'Movido abajo', newRowId: target };
 }
@@ -341,10 +341,10 @@ function swapRows(sheet, rowId1, rowId2) {
   // Solo obtener y setear valores planos de Date, Amount, Detail, y Type (Columnas A - D)
   var range1 = sheet.getRange(rowId1, 1, 1, 4);
   var range2 = sheet.getRange(rowId2, 1, 1, 4);
-  
+
   var values1 = range1.getValues()[0];
   var values2 = range2.getValues()[0];
-  
+
   // Escribir los valores de forma plana e ignorar celdas con fórmulas dentro de las primeras 4 columnas que puedan haber existido por error
   range1.setValues([values2]);
   range2.setValues([values1]);
@@ -370,16 +370,16 @@ function getMonthlySummaryData() {
     console.error('Hoja RESUMEN POR MES no encontrada');
     return [];
   }
-  
+
   var data = sheet.getDataRange().getValues();
   var headerRowIndex = findHeaderRow(data, 3);
-  
+
   var summaries = [];
   for (var i = headerRowIndex + 1; i < data.length; i++) {
     var row = data[i];
     var monthVal = row[0];
     if (!monthVal && monthVal !== 0) continue;
-    
+
     if (typeof monthVal === 'string' && monthVal.trim() !== '') {
       if (monthVal.indexOf("undefined") > -1) {
         summaries.push({
@@ -396,7 +396,7 @@ function getMonthlySummaryData() {
       var mNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
       try {
         monthVal = mNames[monthVal.getMonth()] + " " + monthVal.getFullYear();
-      } catch(e) {
+      } catch (e) {
         monthVal = String(row[0]);
       }
     } else {
@@ -417,7 +417,7 @@ function getMonthlySummaryData() {
       netNoFreq: row[8] || 0
     });
   }
-  
+
   return summaries;
 }
 
@@ -444,11 +444,11 @@ function ensureMonthlyRowExists(month, year) {
         exists = true;
         break;
       }
-      
+
       // Encontrar posición cronológica
       var rowDate = new Date(val.getFullYear(), val.getMonth(), 1);
       var targetDate = new Date(year, month, 1);
-      
+
       if (rowDate.getTime() < targetDate.getTime()) {
         lastDataRow = i + 1;
       } else if (insertIndex === -1) {
@@ -466,12 +466,12 @@ function ensureMonthlyRowExists(month, year) {
     } else {
       sheet.insertRowBefore(insertIndex);
     }
-    
+
     // Establecer la fecha el primer día del mes
     var newDate = new Date(year, month, 1);
     sheet.getRange(insertIndex, 1).setValue(newDate);
     sheet.getRange(insertIndex, 2).setValue(0); // Ingreso frecuente inicial 0
-    
+
     // Establecer fórmulas dinámicas basadas en la fecha de la Columna A
     var r = insertIndex;
     var formulas = [[
@@ -484,11 +484,11 @@ function ensureMonthlyRowExists(month, year) {
       "=H" + r + "-B" + r  // I (Total sin Ing Frec)
     ]];
     sheet.getRange(r, 3, 1, 7).setFormulas(formulas);
-    
+
     // Copiar solo el formato de la fila anterior (si existe)
     var templateRow = insertIndex > (headerRowIndex + 1) ? insertIndex - 1 : insertIndex + 1;
     if (templateRow <= sheet.getLastRow() && templateRow > headerRowIndex + 1) {
-        sheet.getRange(templateRow, 1, 1, 9).copyTo(sheet.getRange(insertIndex, 1, 1, 9), SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
+      sheet.getRange(templateRow, 1, 1, 9).copyTo(sheet.getRange(insertIndex, 1, 1, 9), SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
     }
   }
 }
@@ -508,13 +508,13 @@ function getChartData() {
  */
 function getMonthStats(month, year) {
   var transactions = getTransactions(month, year);
-  
+
   var totalIncome = 0;
   var totalExpense = 0;
   var countIncome = 0;
   var countExpense = 0;
-  
-  transactions.forEach(function(tx) {
+
+  transactions.forEach(function (tx) {
     var amt = Number(tx.amount);
     if (amt > 0) {
       totalIncome += amt;
@@ -524,7 +524,7 @@ function getMonthStats(month, year) {
       countExpense++;
     }
   });
-  
+
   return {
     totalIncome: totalIncome,
     totalExpense: totalExpense,
@@ -543,44 +543,44 @@ function getMonthStats(month, year) {
 function getAdvancedTransactions(filters) {
   var sheet = getSheetByName('INGRESOS Y GASTOS');
   if (!sheet) return [];
-  
+
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return [];
-  
+
   var data = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
   var results = [];
-  
+
   var text = (filters.text || "").toLowerCase().trim();
   var min = (filters.minAmount !== undefined && filters.minAmount !== "") ? parseFloat(filters.minAmount) : null;
   var max = (filters.maxAmount !== undefined && filters.maxAmount !== "") ? parseFloat(filters.maxAmount) : null;
-  
+
   // Convertir fechas de string a Date si existen
   var start = filters.startDate ? new Date(filters.startDate + "T00:00:00") : null;
   var end = filters.endDate ? new Date(filters.endDate + "T23:59:59") : null;
-  
+
   for (var i = 0; i < data.length; i++) {
     var row = data[i];
     var rowDate = row[0];
     var rowAmount = Math.abs(parseFloat(row[1]) || 0);
     var rowDetail = String(row[2] || "").toLowerCase();
     var rowType = String(row[3] || "").toLowerCase();
-    
+
     // 1. Filtro de Texto (en detalle o tipo)
     if (text && rowDetail.indexOf(text) === -1 && rowType.indexOf(text) === -1) continue;
-    
+
     // 2. Filtro de Monto (sobre valor absoluto para encontrar ingresos y gastos)
     if (min !== null && rowAmount < min) continue;
     if (max !== null && rowAmount > max) continue;
-    
+
     // 3. Filtro de Fecha
     if (start || end) {
       var d = (rowDate instanceof Date) ? rowDate : new Date(rowDate);
       if (isNaN(d.getTime())) continue;
-      
+
       if (start && d < start) continue;
       if (end && d > end) continue;
     }
-    
+
     results.push({
       rowId: i + 2, // Compensar encabezado y 0-index
       date: formatDateForSheet(row[0]),
@@ -589,7 +589,7 @@ function getAdvancedTransactions(filters) {
       type: row[3]
     });
   }
-  
+
   // Retornar limitados a 150 para no saturar el DOM, ordenados del más reciente al más antiguo
   return results.reverse().slice(0, 150);
 }
@@ -602,10 +602,10 @@ function getAdvancedTransactions(filters) {
 function updateFreqIncome(monthStr, amount) {
   var sheet = getSheetByName('RESUMEN POR MES');
   if (!sheet) throw new Error('Hoja RESUMEN POR MES no encontrada');
-  
+
   var data = sheet.getDataRange().getValues();
   var headerRowIndex = findHeaderRow(data, 3);
-  
+
   // Buscar la fila correspondiente al mes
   var rowIndexToUpdate = -1;
   for (var i = headerRowIndex + 1; i < data.length; i++) {
@@ -614,20 +614,20 @@ function updateFreqIncome(monthStr, amount) {
       var mNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
       try {
         val = mNames[val.getMonth()] + " " + val.getFullYear();
-      } catch(e) {
+      } catch (e) {
         val = String(val);
       }
     } else {
       val = String(val);
     }
-    
+
     // Comparación simple, asume que from Frontend enviamos exactamente el mismo formato
     if (val === monthStr) {
       rowIndexToUpdate = i + 1; // 1-based index
       break;
     }
   }
-  
+
   if (rowIndexToUpdate > -1) {
     sheet.getRange(rowIndexToUpdate, 2).setValue(amount); // Columna B es index 2
     return { success: true, message: 'Ingreso frecuente actualizado' };
