@@ -55,6 +55,22 @@ function formatDateForSheet(dateObj) {
 }
 
 /**
+ * Encuentra la fila de encabezado en la hoja de resumen
+ * @param {Array} data - Datos de la hoja
+ * @param {number} defaultRow - Fila por defecto si no se encuentra
+ * @returns {number} Índice de la fila de encabezado (0-based)
+ */
+function findHeaderRow(data, defaultRow) {
+  for (var i = 0; i < data.length; i++) {
+    var cell = String(data[i][0]).toUpperCase().trim();
+    if (cell.indexOf("MES") > -1) {
+      return i;
+    }
+  }
+  return defaultRow !== undefined ? defaultRow : 0;
+}
+
+/**
  * Obtiene transacciones filtradas por mes y año
  * @param {number} month - 0 (Ene) a 11 (Dic)
  * @param {number} year - Año de 4 dígitos
@@ -175,10 +191,11 @@ function insertRecordChronologically(sheet, dateObj, amount, detail, type) {
 }
 
 /**
- * Agrega una nueva transacción cronológicamente
+ * Función interna para agregar transacción (lógica común)
  * @param {Object} transactionData - Datos de la transacción
+ * @returns {Object} Objeto con dateObj y targetRow
  */
-function addTransaction(transactionData) {
+function _addTransactionCore(transactionData) {
   var parts = transactionData.date.split('-');
   var dateObj = new Date(parts[0], parts[1] - 1, parts[2]);
 
@@ -192,8 +209,17 @@ function addTransaction(transactionData) {
   var sheet = getSheetByName('INGRESOS Y GASTOS');
   if (!sheet) throw new Error("No se encontró la hoja 'INGRESOS Y GASTOS'");
   
-  insertRecordChronologically(sheet, dateObj, transactionData.amount, transactionData.detail, transactionData.type);
+  var targetRow = insertRecordChronologically(sheet, dateObj, transactionData.amount, transactionData.detail, transactionData.type);
   
+  return { dateObj: dateObj, targetRow: targetRow, sheet: sheet };
+}
+
+/**
+ * Agrega una nueva transacción cronológicamente
+ * @param {Object} transactionData - Datos de la transacción
+ */
+function addTransaction(transactionData) {
+  _addTransactionCore(transactionData);
   return { success: true, message: 'Transacción agregada correctamente' };
 }
 
@@ -204,19 +230,10 @@ function addTransaction(transactionData) {
  * @param {number} year - Año actual
  */
 function addTransactionOptimized(transactionData, month, year) {
-  var parts = transactionData.date.split('-');
-  var dateObj = new Date(parts[0], parts[1] - 1, parts[2]);
-
-  // Asegurar que el mes existe en el resumen
-  try {
-    ensureMonthlyRowExists(dateObj.getMonth(), dateObj.getFullYear());
-  } catch (e) {
-    console.error("Error al asegurar mes en optimizado: " + e.toString());
-  }
-
-  var sheet = getSheetByName('INGRESOS Y GASTOS');
-  
-  var targetRow = insertRecordChronologically(sheet, dateObj, transactionData.amount, transactionData.detail, transactionData.type);
+  var result = _addTransactionCore(transactionData);
+  var dateObj = result.dateObj;
+  var targetRow = result.targetRow;
+  var sheet = result.sheet;
   
   // Si coincide con el filtro actual, retornar datos
   if (dateObj.getMonth() === month && dateObj.getFullYear() === year) {
@@ -355,20 +372,7 @@ function getMonthlySummaryData() {
   }
   
   var data = sheet.getDataRange().getValues();
-  var headerRowIndex = -1;
-  
-  // Buscar fila de encabezado
-  for (var i = 0; i < data.length; i++) {
-    var cell = String(data[i][0]).toUpperCase().trim();
-    if (cell.indexOf("MES") > -1) {
-      headerRowIndex = i;
-      break;
-    }
-  }
-  
-  if (headerRowIndex === -1) {
-    headerRowIndex = 3;
-  }
+  var headerRowIndex = findHeaderRow(data, 3);
   
   var summaries = [];
   for (var i = headerRowIndex + 1; i < data.length; i++) {
@@ -427,17 +431,7 @@ function ensureMonthlyRowExists(month, year) {
   if (!sheet) return;
 
   var data = sheet.getDataRange().getValues();
-  var headerRowIndex = -1;
-  
-  // Buscar fila de encabezado
-  for (var i = 0; i < data.length; i++) {
-    var cell = String(data[i][0]).toUpperCase().trim();
-    if (cell.indexOf("MES") > -1) {
-      headerRowIndex = i;
-      break;
-    }
-  }
-  if (headerRowIndex === -1) headerRowIndex = 0; // Fallback al inicio si no se encuentra
+  var headerRowIndex = findHeaderRow(data, 0);
 
   var exists = false;
   var lastDataRow = headerRowIndex + 1;
@@ -610,17 +604,7 @@ function updateFreqIncome(monthStr, amount) {
   if (!sheet) throw new Error('Hoja RESUMEN POR MES no encontrada');
   
   var data = sheet.getDataRange().getValues();
-  var headerRowIndex = -1;
-  
-  // Buscar fila de encabezado
-  for (var i = 0; i < data.length; i++) {
-    var cell = String(data[i][0]).toUpperCase().trim();
-    if (cell.indexOf("MES") > -1) {
-      headerRowIndex = i;
-      break;
-    }
-  }
-  if (headerRowIndex === -1) headerRowIndex = 3;
+  var headerRowIndex = findHeaderRow(data, 3);
   
   // Buscar la fila correspondiente al mes
   var rowIndexToUpdate = -1;

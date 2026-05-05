@@ -237,6 +237,67 @@
   }
 
   // ============================================
+  // DATE HELPERS (Refactorizado)
+  // ============================================
+
+  /**
+   * Mapa de meses en español a índices (0-11)
+   */
+  const SPANISH_MONTHS_MAP = {
+    ene: 0, feb: 1, mar: 2, abr: 3, may: 4, jun: 5,
+    jul: 6, ago: 7, sep: 8, oct: 9, nov: 10, dic: 11,
+  };
+
+  /**
+   * Convierte una fecha a formato YYYY-MM-DD
+   * @param {Date|string} date - Fecha como Date o ISO string
+   * @returns {string} Fecha en formato YYYY-MM-DD
+   */
+  function formatDateToISO(date) {
+    const d = date instanceof Date ? date : new Date(date);
+    if (isNaN(d.getTime())) return "";
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  /**
+   * Convierte una fecha en formato "28-feb-26" a objeto Date
+   * @param {string} dateStr - Fecha en formato "dd-mmm-yy"
+   * @returns {Date|null} Objeto Date o null si no es válido
+   */
+  function parseSpanishDate(dateStr) {
+    if (!dateStr) return null;
+    const parts = dateStr.split("-");
+    if (parts.length !== 3) return null;
+
+    const mIndex = SPANISH_MONTHS_MAP[parts[1].toLowerCase()];
+    if (mIndex === undefined) return null;
+
+    let yr = parseInt(parts[2]);
+    if (yr < 100) yr += 2000;
+
+    return new Date(yr, mIndex, parseInt(parts[0]));
+  }
+
+  /**
+   * Convierte una transacción eliminada a formato de fecha para el servidor
+   * @param {Object} transaction - Transacción con rawDate o date
+   * @returns {string} Fecha en formato YYYY-MM-DD
+   */
+  function transactionDateToISO(transaction) {
+    if (transaction.rawDate) {
+      return formatDateToISO(transaction.rawDate);
+    }
+    if (transaction.date) {
+      const d = parseSpanishDate(transaction.date);
+      return d ? formatDateToISO(d) : "";
+    }
+    return "";
+  }
+
+  // ============================================
   // SKELETON LOADERS
   // ============================================
   const TABLE_SKELETON_WIDTHS = ["116px", "112px", "100%", "148px", "92px"];
@@ -1582,42 +1643,8 @@
     fabUndo.classList.add("hidden");
     if (undoTimeout) clearTimeout(undoTimeout);
 
-    // Convertir rawDate (ISO string) a formato YYYY-MM-DD que espera el server
-    let dateStr = "";
-    if (lastDeletedTransaction.rawDate) {
-      const d = new Date(lastDeletedTransaction.rawDate);
-      const yyyy = d.getFullYear();
-      const mm = String(d.getMonth() + 1).padStart(2, "0");
-      const dd = String(d.getDate()).padStart(2, "0");
-      dateStr = `${yyyy}-${mm}-${dd}`;
-    } else {
-      // Si no hay rawDate intentamos construir: lastDeletedTransaction.date es "28-feb-26"
-      const parts = lastDeletedTransaction.date.split("-");
-      const mMap = {
-        ene: 0,
-        feb: 1,
-        mar: 2,
-        abr: 3,
-        may: 4,
-        jun: 5,
-        jul: 6,
-        ago: 7,
-        sep: 8,
-        oct: 9,
-        nov: 10,
-        dic: 11,
-      };
-      if (parts.length === 3) {
-        const mIndex = mMap[parts[1].toLowerCase()];
-        let yr = parseInt(parts[2]);
-        if (yr < 100) yr += 2000;
-        const d = new Date(yr, mIndex, parseInt(parts[0]));
-        const yyyy = d.getFullYear();
-        const mm = String(d.getMonth() + 1).padStart(2, "0");
-        const dd = String(d.getDate()).padStart(2, "0");
-        dateStr = `${yyyy}-${mm}-${dd}`;
-      }
-    }
+    // Convertir fecha a formato YYYY-MM-DD
+    const dateStr = transactionDateToISO(lastDeletedTransaction);
 
     const txData = {
       date: dateStr,
@@ -1664,11 +1691,7 @@
       document.getElementById("editRowId").value = data.rowId;
 
       if (data.rawDate) {
-        const d = new Date(data.rawDate);
-        const yyyy = d.getFullYear();
-        const mm = String(d.getMonth() + 1).padStart(2, "0");
-        const dd = String(d.getDate()).padStart(2, "0");
-        document.getElementById("inputDate").value = `${yyyy}-${mm}-${dd}`;
+        document.getElementById("inputDate").value = formatDateToISO(data.rawDate);
       }
 
       if (data.formula && data.formula.startsWith("=")) {
@@ -1690,11 +1713,7 @@
       document.getElementById("editRowId").value = "";
 
       // Fix: Usar fecha local en lugar de UTC (evita salto de día después de las 7PM)
-      const today = new Date();
-      const yyyy = today.getFullYear();
-      const mm = String(today.getMonth() + 1).padStart(2, "0");
-      const dd = String(today.getDate()).padStart(2, "0");
-      document.getElementById("inputDate").value = `${yyyy}-${mm}-${dd}`;
+      document.getElementById("inputDate").value = formatDateToISO(new Date());
 
       document.getElementById("btnSubmit").innerHTML =
         '<i class="fa-solid fa-plus"></i> Agregar';
@@ -1818,8 +1837,7 @@
     const tbodyElement = document.getElementById("summaryTableBody");
     if (!data || data.length === 0) {
       if (tbodyElement) {
-        tbodyElement.innerHTML =
-          '<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--text-secondary);">No hay datos</td></tr>';
+        tbodyElement.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--text-secondary);">No hay datos</td></tr>';
       }
       return;
     }
@@ -1827,65 +1845,114 @@
     registerChartPluginsOnce();
     const isMobileSummary = window.innerWidth <= 768;
 
-    // ── Extract available years ──────────────────────────────────────────────
+    // Extraer años disponibles y renderizar chips
+    const years = extractAvailableYears(data);
+    if (!summarySelectedYear || !years.includes(summarySelectedYear)) {
+      summarySelectedYear = years[0];
+    }
+    renderYearChips(years);
+
+    // Filtrar datos por año seleccionado
+    const yearData = filterDataByYear(data, summarySelectedYear);
+
+    // Calcular y actualizar KPIs
+    const kpiTotals = calculateKPIAggregates(yearData);
+    updateKPICards(kpiTotals);
+
+    // Obtener colores del tema
+    const themeColors = getThemeColors();
+
+    // Renderizar gráficos
+    renderPieCharts(kpiTotals, themeColors, isMobileSummary);
+    renderMonthlyTrendChart(yearData, themeColors, isMobileSummary);
+
+    // Renderizar tabla de detalle
+    const detailRows = calculateDetailRows(yearData);
+    const maxBars = calculateMaxBars(detailRows);
+    renderDetailStrip(detailRows);
+    renderDetailTableRows(detailRows, maxBars);
+
+    // Refrescar stats del header y gráfico interanual
+    sortAndRender();
+    setTimeout(renderCharts, 80);
+  }
+
+  // ============================================
+  // SUMMARY HELPERS (Refactorizado)
+  // ============================================
+
+  /**
+   * Extrae los años disponibles de los datos del resumen
+   */
+  function extractAvailableYears(data) {
     const yearsSet = new Set();
     data.forEach((s) => {
       if (!s.monthYear) return;
       const parts = s.monthYear.split(" ");
       if (parts.length >= 2) yearsSet.add(parts[parts.length - 1]);
     });
-    const years = ["Todos"].concat(Array.from(yearsSet).sort().reverse());
+    return ["Todos"].concat(Array.from(yearsSet).sort().reverse());
+  }
 
-    // Default to most-recent year on first render
-    if (!summarySelectedYear || !years.includes(summarySelectedYear)) {
-      summarySelectedYear = years[0];
-    }
-
-    // ── Year Chips ───────────────────────────────────────────────────────────
+  /**
+   * Renderiza los chips de selección de año
+   */
+  function renderYearChips(years) {
     const chipsEl = document.getElementById("summaryYearChips");
-    if (chipsEl) {
-      chipsEl.innerHTML = "";
-      const yearChipFragment = document.createDocumentFragment();
-      years.forEach((yr) => {
-        const btn = document.createElement("button");
-        btn.className =
-          "year-chip-btn" + (yr === summarySelectedYear ? " active" : "");
-        btn.textContent = yr;
-        btn.addEventListener("click", () => {
-          summarySelectedYear = yr;
-          renderSummaryTable(summaries);
-        });
-        yearChipFragment.appendChild(btn);
+    if (!chipsEl) return;
+
+    chipsEl.innerHTML = "";
+    const fragment = document.createDocumentFragment();
+    years.forEach((yr) => {
+      const btn = document.createElement("button");
+      btn.className = "year-chip-btn" + (yr === summarySelectedYear ? " active" : "");
+      btn.textContent = yr;
+      btn.addEventListener("click", () => {
+        summarySelectedYear = yr;
+        renderSummaryTable(summaries);
       });
-      chipsEl.appendChild(yearChipFragment);
-    }
+      fragment.appendChild(btn);
+    });
+    chipsEl.appendChild(fragment);
+  }
 
-    // ── Filter data for selected year ────────────────────────────────────────
-    const yearData =
-      summarySelectedYear === "Todos"
-        ? data
-        : data.filter(
-            (s) => s.monthYear && s.monthYear.endsWith(summarySelectedYear),
-          );
+  /**
+   * Filtra los datos por año seleccionado
+   */
+  function filterDataByYear(data, year) {
+    if (year === "Todos" || !year) return data;
+    return data.filter((s) => s.monthYear && s.monthYear.endsWith(year));
+  }
 
-    // ── KPI Aggregates ───────────────────────────────────────────────────────
-    let totFreqInc = 0,
-      totNoFreqInc = 0,
-      totFreqExp = 0,
-      totNoFreqExp = 0;
+  /**
+   * Calcula los agregados KPI de los datos del año
+   */
+  function calculateKPIAggregates(yearData) {
+    let totFreqInc = 0, totNoFreqInc = 0, totFreqExp = 0, totNoFreqExp = 0;
     yearData.forEach((s) => {
       totFreqInc += Number(s.freqIncome) || 0;
       totNoFreqInc += Number(s.nonFreqIncome) || 0;
       totFreqExp += Math.abs(Number(s.freqExpense)) || 0;
       totNoFreqExp += Math.abs(Number(s.nonFreqExpense)) || 0;
     });
+
     const totIncome = totFreqInc + totNoFreqInc;
     const totExpense = totFreqExp + totNoFreqExp;
     const netBalance = totIncome - totExpense;
-    const savingsRate =
-      totIncome > 0 ? Math.round((netBalance / totIncome) * 100) : 0;
+    const savingsRate = totIncome > 0 ? Math.round((netBalance / totIncome) * 100) : 0;
 
-    // Update KPI cards
+    return {
+      totFreqInc, totNoFreqInc, totFreqExp, totNoFreqExp,
+      totIncome, totExpense, netBalance, savingsRate
+    };
+  }
+
+  /**
+   * Actualiza las tarjetas KPI en el DOM
+   */
+  function updateKPICards(totals) {
+    const { totIncome, totExpense, netBalance, savingsRate } = totals;
+
     const kpiIncome = document.getElementById("kpiTotalIncome");
     const kpiExpense = document.getElementById("kpiTotalExpense");
     const kpiNet = document.getElementById("kpiNetBalance");
@@ -1895,29 +1962,97 @@
     if (kpiExpense) kpiExpense.textContent = "S/ " + totExpense.toFixed(2);
 
     if (kpiNet) {
-      kpiNet.textContent =
-        (netBalance >= 0 ? "+ " : "- ") +
-        "S/ " +
-        Math.abs(netBalance).toFixed(2);
-      kpiNet.style.color =
-        netBalance >= 0 ? "var(--accent-green)" : "var(--accent-red)";
+      kpiNet.textContent = (netBalance >= 0 ? "+ " : "- ") + "S/ " + Math.abs(netBalance).toFixed(2);
+      kpiNet.style.color = netBalance >= 0 ? "var(--accent-green)" : "var(--accent-red)";
     }
 
     if (kpiSR) {
       kpiSR.textContent = savingsRate + "%";
-      kpiSR.style.color =
-        savingsRate >= 0 ? "var(--accent-yellow)" : "var(--accent-red)";
+      kpiSR.style.color = savingsRate >= 0 ? "var(--accent-yellow)" : "var(--accent-red)";
     }
+  }
 
-    // Get dynamic colors depending on theme
-    const getVar = (name) =>
-      getComputedStyle(document.body).getPropertyValue(name).trim() || "#fff";
-    const textBodyColor = getVar("--text-primary");
-    const textMuted = getVar("--text-secondary");
-    const dashBg = getVar("--bg-dark");
-    const pieBorderColor = getVar("--bg-card");
+  /**
+   * Obtiene los colores del tema actual
+   */
+  function getThemeColors() {
+    const getVar = (name) => getComputedStyle(document.body).getPropertyValue(name).trim() || "#fff";
+    return {
+      textBodyColor: getVar("--text-primary"),
+      textMuted: getVar("--text-secondary"),
+      dashBg: getVar("--bg-dark"),
+      pieBorderColor: getVar("--bg-card"),
+      borderColor: getVar("--border-color"),
+      borderColorLight: getVar("--border-color-light")
+    };
+  }
 
-    // ── Pie: Income Breakdown ────────────────────────────────────────────────
+  /**
+   * Configuración base para tooltips de gráficos
+   */
+  function getBaseTooltipConfig(colors, type = "pie") {
+    const isLight = colors.dashBg === "#f3f8ef" || colors.dashBg === "#f7faef";
+    return {
+      backgroundColor: isLight ? "rgba(255,255,255,0.97)" : "rgba(15,17,16,0.97)",
+      padding: 12,
+      cornerRadius: 8,
+      bodyColor: colors.textBodyColor,
+      titleColor: colors.textBodyColor,
+      borderColor: colors.borderColor,
+      borderWidth: 1,
+      callbacks: type === "pie" 
+        ? { label: (ctx) => ` S/ ${ctx.parsed.toFixed(2)}` }
+        : {
+            label: (ctx) => ` ${ctx.dataset.label}: S/ ${ctx.parsed.y.toFixed(2)}`,
+            labelColor: (ctx) => ({
+              borderColor: ctx.dataset.borderColor || ctx.dataset.backgroundColor,
+              backgroundColor: ctx.dataset.borderColor || ctx.dataset.backgroundColor,
+            }),
+          }
+    };
+  }
+
+  /**
+   * Configuración base para leyendas de gráficos
+   */
+  function getBaseLegendConfig(isMobile, position = "bottom") {
+    return {
+      position,
+      labels: {
+        color: getThemeColors().textMuted,
+        font: { size: isMobile ? 10 : 11, family: "DM Sans", weight: "700" },
+        boxWidth: position === "bottom" ? 10 : 12,
+        padding: isMobile ? 8 : 14,
+        ...(position === "top" && { usePointStyle: true, pointStyle: "circle" }),
+      },
+    };
+  }
+
+  /**
+   * Configuración base para datalabels de gráficos de torta
+   */
+  function getPieDatalabelsConfig(isMobile) {
+    return {
+      display: true,
+      color: "#E9F2E9",
+      formatter: (value, ctx) => {
+        const dataArr = ctx.chart.data.datasets[0].data;
+        const sum = dataArr.reduce((acc, val) => acc + Number(val), 0);
+        if (sum === 0) return "0%";
+        const percentage = ((value * 100) / sum).toFixed(1) + "%";
+        return value > 0 && (!isMobile || (value * 100) / sum >= 5) ? percentage : "";
+      },
+      font: { weight: "bold", size: isMobile ? 11 : 13, family: "DM Sans" },
+    };
+  }
+
+  /**
+   * Renderiza los gráficos de torta (ingresos y gastos)
+   */
+  function renderPieCharts(totals, colors, isMobile) {
+    const { totFreqInc, totNoFreqInc, totFreqExp, totNoFreqExp } = totals;
+
+    // Pie de Ingresos
     const pieIncCtx = document.getElementById("pieIncomeChart");
     if (pieIncCtx) {
       if (dashPieIncome) dashPieIncome.destroy();
@@ -1925,81 +2060,29 @@
         type: "doughnut",
         data: {
           labels: ["Ing. Frecuente", "Ing. No Frec."],
-          datasets: [
-            {
-              data: [totFreqInc, totNoFreqInc],
-              backgroundColor: ["#00D26A", "#2D9CDB"], // Frequent green vs non-frequent blue
-              borderColor: pieBorderColor,
-              borderWidth: 2,
-              hoverOffset: 10,
-            },
-          ],
+          datasets: [{
+            data: [totFreqInc, totNoFreqInc],
+            backgroundColor: ["#00D26A", "#2D9CDB"],
+            borderColor: colors.pieBorderColor,
+            borderWidth: 2,
+            hoverOffset: 10,
+          }],
         },
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          cutout: isMobileSummary ? "58%" : "54%",
+          cutout: isMobile ? "58%" : "54%",
           plugins: {
-            legend: {
-              position: "bottom",
-              labels: {
-                color: textMuted,
-                font: {
-                  size: isMobileSummary ? 10 : 11,
-                  family: "DM Sans",
-                  weight: "700",
-                },
-                boxWidth: 10,
-                padding: isMobileSummary ? 8 : 14,
-              },
-            },
-            tooltip: {
-              backgroundColor:
-                dashBg === "#f3f8ef"
-                  ? "rgba(255,255,255,0.97)"
-                  : "rgba(15,17,16,0.97)",
-              padding: 12,
-              cornerRadius: 8,
-              bodyColor: textBodyColor,
-              titleColor: textBodyColor,
-              borderColor: getVar("--border-color"),
-              borderWidth: 1,
-              callbacks: { label: (ctx) => ` S/ ${ctx.parsed.toFixed(2)}` },
-            },
-            datalabels: {
-              display: true,
-              color: "#E9F2E9",
-              formatter: (value, ctx) => {
-                let sum = 0;
-                let dataArr = ctx.chart.data.datasets[0].data;
-                dataArr.forEach((data) => {
-                  sum += Number(data);
-                });
-                if (sum === 0) return "0%";
-                let percentage = ((value * 100) / sum).toFixed(1) + "%";
-                return value > 0 &&
-                  (!isMobileSummary || (value * 100) / sum >= 5)
-                  ? percentage
-                  : "";
-              },
-              font: {
-                weight: "bold",
-                size: isMobileSummary ? 11 : 13,
-                family: "DM Sans",
-              },
-            },
+            legend: getBaseLegendConfig(isMobile),
+            tooltip: getBaseTooltipConfig(colors, "pie"),
+            datalabels: getPieDatalabelsConfig(isMobile),
           },
-          animation: {
-            animateRotate: true,
-            animateScale: true,
-            duration: 900,
-            easing: "easeOutCubic",
-          },
+          animation: { animateRotate: true, animateScale: true, duration: 900, easing: "easeOutCubic" },
         },
       });
     }
 
-    // ── Pie: Expense Breakdown ───────────────────────────────────────────────
+    // Pie de Gastos
     const pieExpCtx = document.getElementById("pieExpenseChart");
     if (pieExpCtx) {
       if (dashPieExpense) dashPieExpense.destroy();
@@ -2007,353 +2090,216 @@
         type: "doughnut",
         data: {
           labels: ["Gasto Frec.", "Gasto No Frec."],
-          datasets: [
-            {
-              data: [totFreqExp, totNoFreqExp],
-              backgroundColor: ["#FF4D57", "#FFC145"], // Frequent red vs non-frequent gold
-              borderColor: pieBorderColor,
-              borderWidth: 2,
-              hoverOffset: 10,
-            },
-          ],
+          datasets: [{
+            data: [totFreqExp, totNoFreqExp],
+            backgroundColor: ["#FF4D57", "#FFC145"],
+            borderColor: colors.pieBorderColor,
+            borderWidth: 2,
+            hoverOffset: 10,
+          }],
         },
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          cutout: isMobileSummary ? "58%" : "54%",
+          cutout: isMobile ? "58%" : "54%",
           plugins: {
-            legend: {
-              position: "bottom",
-              labels: {
-                color: textMuted,
-                font: {
-                  size: isMobileSummary ? 10 : 11,
-                  family: "DM Sans",
-                  weight: "700",
-                },
-                boxWidth: 10,
-                padding: isMobileSummary ? 8 : 14,
-              },
-            },
-            tooltip: {
-              backgroundColor:
-                dashBg === "#f3f8ef"
-                  ? "rgba(255,255,255,0.97)"
-                  : "rgba(15,17,16,0.97)",
-              padding: 12,
-              cornerRadius: 8,
-              bodyColor: textBodyColor,
-              titleColor: textBodyColor,
-              borderColor: getVar("--border-color"),
-              borderWidth: 1,
-              callbacks: { label: (ctx) => ` S/ ${ctx.parsed.toFixed(2)}` },
-            },
-            datalabels: {
-              display: true,
-              color: "#E9F2E9",
-              formatter: (value, ctx) => {
-                let sum = 0;
-                let dataArr = ctx.chart.data.datasets[0].data;
-                dataArr.forEach((data) => {
-                  sum += Number(data);
-                });
-                if (sum === 0) return "0%";
-                let percentage = ((value * 100) / sum).toFixed(1) + "%";
-                return value > 0 &&
-                  (!isMobileSummary || (value * 100) / sum >= 5)
-                  ? percentage
-                  : "";
-              },
-              font: {
-                weight: "bold",
-                size: isMobileSummary ? 11 : 13,
-                family: "DM Sans",
-              },
-            },
+            legend: getBaseLegendConfig(isMobile),
+            tooltip: getBaseTooltipConfig(colors, "pie"),
+            datalabels: getPieDatalabelsConfig(isMobile),
           },
-          animation: {
-            animateRotate: true,
-            animateScale: true,
-            duration: 900,
-            easing: "easeOutCubic",
-          },
+          animation: { animateRotate: true, animateScale: true, duration: 900, easing: "easeOutCubic" },
         },
       });
     }
+  }
 
-    // ── Bar: Monthly Trend ───────────────────────────────────────────────────
+  /**
+   * Renderiza el gráfico de tendencia mensual
+   */
+  function renderMonthlyTrendChart(yearData, colors, isMobile) {
     const trendCtx = document.getElementById("summaryTrendChart");
-    if (trendCtx) {
-      if (dashTrend) dashTrend.destroy();
-      const mLabels = monthNames.map((m) => m.substring(0, 3));
-      const incData = new Array(12).fill(0);
-      const expData = new Array(12).fill(0);
+    if (!trendCtx) return;
 
-      yearData.forEach((s) => {
-        const mName = s.monthYear.split(" ")[0].toLowerCase().substring(0, 3);
-        const idx = monthNames.findIndex((m) =>
-          m.toLowerCase().startsWith(mName),
-        );
-        if (idx > -1) {
-          incData[idx] +=
-            (Number(s.freqIncome) || 0) + (Number(s.nonFreqIncome) || 0);
-          expData[idx] += Math.abs(Number(s.totalExpense) || 0);
-        }
-      });
+    if (dashTrend) dashTrend.destroy();
+    const mLabels = monthNames.map((m) => m.substring(0, 3));
+    const incData = new Array(12).fill(0);
+    const expData = new Array(12).fill(0);
 
-      const netData = incData.map((v, i) => v - expData[i]);
-
-      registerChartPluginsOnce();
-      dashTrend = new Chart(trendCtx.getContext("2d"), {
-        type: "bar",
-        data: {
-          labels: mLabels,
-          datasets: [
-            {
-              label: "Ingresos",
-              data: incData,
-              backgroundColor: "#00D26A",
-              borderRadius: 6,
-              barPercentage: 0.6,
-              order: 2,
-            },
-            {
-              label: "Gastos",
-              data: expData,
-              backgroundColor: "#FF4D57",
-              borderRadius: 6,
-              barPercentage: 0.6,
-              order: 2,
-            },
-            {
-              label: "Neto",
-              data: netData,
-              type: "line",
-              borderColor: "#2D9CDB",
-              backgroundColor: "rgba(45, 156, 219, 0.16)",
-              borderWidth: 2.5,
-              pointRadius: 4,
-              pointBackgroundColor: "#2D9CDB",
-              pointBorderColor: "#0f1110",
-              pointBorderWidth: 2,
-              tension: 0.4,
-              fill: true,
-              order: 1,
-            },
-          ],
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: {
-              position: "top",
-              labels: {
-                color: textMuted,
-                font: { size: 11, family: "DM Sans" },
-                boxWidth: 12,
-                padding: 14,
-                usePointStyle: true,
-                pointStyle: "circle",
-              },
-            },
-            tooltip: {
-              backgroundColor:
-                dashBg === "#f3f8ef"
-                  ? "rgba(255,255,255,0.97)"
-                  : "rgba(15,17,16,0.97)",
-              titleColor: textBodyColor,
-              bodyColor: textMuted,
-              borderColor: getVar("--border-color"),
-              borderWidth: 1,
-              padding: 12,
-              cornerRadius: 8,
-              callbacks: {
-                label: (ctx) =>
-                  ` ${ctx.dataset.label}: S/ ${ctx.parsed.y.toFixed(2)}`,
-                labelColor: (ctx) => ({
-                  borderColor:
-                    ctx.dataset.borderColor || ctx.dataset.backgroundColor,
-                  backgroundColor:
-                    ctx.dataset.borderColor || ctx.dataset.backgroundColor,
-                }),
-              },
-            },
-            datalabels: { display: false },
-          },
-          scales: {
-            y: {
-              beginAtZero: true,
-              grid: {
-                color: getVar("--border-color-light"),
-                drawBorder: false,
-              },
-              ticks: {
-                color: textMuted,
-                font: { family: "DM Sans", size: 10 },
-                callback: (v) =>
-                  "S/" + (v >= 1000 ? (v / 1000).toFixed(1) + "k" : v),
-              },
-              border: { display: false },
-            },
-            x: {
-              grid: { display: false },
-              ticks: {
-                color: textMuted,
-                font: { family: "DM Sans", size: 10 },
-              },
-              border: { display: false },
-            },
-          },
-          interaction: { mode: "index", intersect: false },
-          animation: { duration: 700, easing: "easeOutQuart" },
-        },
-      });
-    }
-
-    // ── Detail Table ─────────────────────────────────────────────────────────
-    const tbody = document.getElementById("summaryTableBody");
-    if (tbody) {
-      tbody.innerHTML = "";
-      const fragment = document.createDocumentFragment();
-
-      const detailRows = yearData.map((row) => {
-        const freqIncome = Number(row.freqIncome) || 0;
-        const nonFreqIncome = Number(row.nonFreqIncome) || 0;
-        const freqExpense = Math.abs(Number(row.freqExpense) || 0);
-        const nonFreqExpense = Math.abs(Number(row.nonFreqExpense) || 0);
-        const totalExpense = Math.abs(Number(row.totalExpense) || 0);
-        const netMonthly = Number(row.netMonthly) || 0;
-        return {
-          row,
-          freqIncome,
-          nonFreqIncome,
-          totalIncome: freqIncome + nonFreqIncome,
-          freqExpense,
-          nonFreqExpense,
-          totalExpense,
-          netMonthly,
-        };
-      });
-
-      const maxBars = detailRows.reduce(
-        (max, item) => ({
-          freqIncome: Math.max(max.freqIncome, item.freqIncome),
-          nonFreqIncome: Math.max(max.nonFreqIncome, item.nonFreqIncome),
-          freqExpense: Math.max(max.freqExpense, item.freqExpense),
-          nonFreqExpense: Math.max(max.nonFreqExpense, item.nonFreqExpense),
-          totalExpense: Math.max(max.totalExpense, item.totalExpense),
-          netMonthly: Math.max(max.netMonthly, Math.abs(item.netMonthly)),
-        }),
-        {
-          freqIncome: 0,
-          nonFreqIncome: 0,
-          freqExpense: 0,
-          nonFreqExpense: 0,
-          totalExpense: 0,
-          netMonthly: 0,
-        },
-      );
-
-      const pct = (value, max) =>
-        max ? Math.min(100, (Math.abs(Number(value) || 0) / max) * 100) : 0;
-      const getTop = (key) =>
-        detailRows.reduce(
-          (best, item) => (!best || item[key] > best[key] ? item : best),
-          null,
-        );
-
-      const detailStrip = document.getElementById("detailSummaryStrip");
-      if (detailStrip) {
-        const bestNet = detailRows.reduce(
-          (best, item) =>
-            !best || item.netMonthly > best.netMonthly ? item : best,
-          null,
-        );
-        const worstNet = detailRows.reduce(
-          (worst, item) =>
-            !worst || item.netMonthly < worst.netMonthly ? item : worst,
-          null,
-        );
-        const topIncome = getTop("totalIncome");
-        const topExpense = getTop("totalExpense");
-        const totalIncome = detailRows.reduce(
-          (sum, item) => sum + item.totalIncome,
-          0,
-        );
-        const totalExpense = detailRows.reduce(
-          (sum, item) => sum + item.totalExpense,
-          0,
-        );
-        const totalNet = detailRows.reduce(
-          (sum, item) => sum + item.netMonthly,
-          0,
-        );
-        const avgIncome = detailRows.length
-          ? totalIncome / detailRows.length
-          : 0;
-        const avgExpense = detailRows.length
-          ? totalExpense / detailRows.length
-          : 0;
-        const avgNet = detailRows.length ? totalNet / detailRows.length : 0;
-        const savingsRate =
-          totalIncome > 0 ? Math.round((totalNet / totalIncome) * 100) : 0;
-        detailStrip.innerHTML = `
-        <div class="detail-mini-card detail-mini-period">
-          <span class="detail-mini-label">Periodo</span>
-          <strong>${detailRows.length} meses</strong>
-          <small class="detail-mini-note">${summarySelectedYear || "Todos"}</small>
-        </div>
-        <div class="detail-mini-card detail-mini-income">
-          <span class="detail-mini-label">Ingreso prom.</span>
-          <strong>${formatMoney(avgIncome)}</strong>
-          <small class="detail-mini-note">por mes</small>
-        </div>
-        <div class="detail-mini-card detail-mini-expense">
-          <span class="detail-mini-label">Gasto prom.</span>
-          <strong>${formatMoney(-avgExpense)}</strong>
-          <small class="detail-mini-note">por mes</small>
-        </div>
-        <div class="detail-mini-card detail-mini-net">
-          <span class="detail-mini-label">Neto prom.</span>
-          <strong>${formatMoney(avgNet)}</strong>
-          <small class="detail-mini-note">${savingsRate}% ahorro</small>
-        </div>
-        <div class="detail-mini-card detail-mini-income">
-          <span class="detail-mini-label">Mayor ingreso</span>
-          <strong>${topIncome ? topIncome.row.monthYear : "-"}</strong>
-          <small class="detail-mini-note">${topIncome ? formatMoney(topIncome.totalIncome) : "-"}</small>
-        </div>
-        <div class="detail-mini-card detail-mini-expense">
-          <span class="detail-mini-label">Mayor gasto</span>
-          <strong>${topExpense ? topExpense.row.monthYear : "-"}</strong>
-          <small class="detail-mini-note">${topExpense ? formatMoney(-topExpense.totalExpense) : "-"}</small>
-        </div>
-        <div class="detail-mini-card detail-mini-net">
-          <span class="detail-mini-label">Mejor neto</span>
-          <strong>${bestNet ? bestNet.row.monthYear : "-"}</strong>
-          <small class="detail-mini-note">${bestNet ? formatMoney(bestNet.netMonthly) : "-"}</small>
-        </div>
-        <div class="detail-mini-card detail-mini-risk">
-          <span class="detail-mini-label">Neto más bajo</span>
-          <strong>${worstNet ? worstNet.row.monthYear : "-"}</strong>
-          <small class="detail-mini-note">${worstNet ? formatMoney(worstNet.netMonthly) : "-"}</small>
-        </div>
-      `;
+    yearData.forEach((s) => {
+      const mName = s.monthYear.split(" ")[0].toLowerCase().substring(0, 3);
+      const idx = monthNames.findIndex((m) => m.toLowerCase().startsWith(mName));
+      if (idx > -1) {
+        incData[idx] += (Number(s.freqIncome) || 0) + (Number(s.nonFreqIncome) || 0);
+        expData[idx] += Math.abs(Number(s.totalExpense) || 0);
       }
+    });
 
-      let previousYear = "";
-      detailRows.forEach((item) => {
-        const { row } = item;
-        const [monthName, rowYear = ""] = String(row.monthYear || "").split(
-          " ",
-        );
-        const isYearBreak = rowYear && previousYear && rowYear !== previousYear;
-        previousYear = rowYear || previousYear;
+    const netData = incData.map((v, i) => v - expData[i]);
 
-        const tr = document.createElement("tr");
-        if (isYearBreak) tr.classList.add("summary-year-break");
-        tr.innerHTML = `
+    registerChartPluginsOnce();
+    dashTrend = new Chart(trendCtx.getContext("2d"), {
+      type: "bar",
+      data: {
+        labels: mLabels,
+        datasets: [
+          { label: "Ingresos", data: incData, backgroundColor: "#00D26A", borderRadius: 6, barPercentage: 0.6, order: 2 },
+          { label: "Gastos", data: expData, backgroundColor: "#FF4D57", borderRadius: 6, barPercentage: 0.6, order: 2 },
+          {
+            label: "Neto", data: netData, type: "line",
+            borderColor: "#2D9CDB", backgroundColor: "rgba(45, 156, 219, 0.16)",
+            borderWidth: 2.5, pointRadius: 4, pointBackgroundColor: "#2D9CDB",
+            pointBorderColor: "#0f1110", pointBorderWidth: 2, tension: 0.4, fill: true, order: 1,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: getBaseLegendConfig(isMobile, "top"),
+          tooltip: getBaseTooltipConfig(colors, "bar"),
+          datalabels: { display: false },
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            grid: { color: colors.borderColorLight, drawBorder: false },
+            ticks: { color: colors.textMuted, font: { family: "DM Sans", size: 10 }, callback: (v) => "S/" + (v >= 1000 ? (v / 1000).toFixed(1) + "k" : v) },
+            border: { display: false },
+          },
+          x: {
+            grid: { display: false },
+            ticks: { color: colors.textMuted, font: { family: "DM Sans", size: 10 } },
+            border: { display: false },
+          },
+        },
+        interaction: { mode: "index", intersect: false },
+        animation: { duration: 700, easing: "easeOutQuart" },
+      },
+    });
+  }
+
+  /**
+   * Calcula las filas de detalle procesadas
+   */
+  function calculateDetailRows(yearData) {
+    return yearData.map((row) => {
+      const freqIncome = Number(row.freqIncome) || 0;
+      const nonFreqIncome = Number(row.nonFreqIncome) || 0;
+      const freqExpense = Math.abs(Number(row.freqExpense) || 0);
+      const nonFreqExpense = Math.abs(Number(row.nonFreqExpense) || 0);
+      const totalExpense = Math.abs(Number(row.totalExpense) || 0);
+      const netMonthly = Number(row.netMonthly) || 0;
+      return {
+        row, freqIncome, nonFreqIncome, totalIncome: freqIncome + nonFreqIncome,
+        freqExpense, nonFreqExpense, totalExpense, netMonthly,
+      };
+    });
+  }
+
+  /**
+   * Calcula los valores máximos para las barras de progreso
+   */
+  function calculateMaxBars(detailRows) {
+    return detailRows.reduce(
+      (max, item) => ({
+        freqIncome: Math.max(max.freqIncome, item.freqIncome),
+        nonFreqIncome: Math.max(max.nonFreqIncome, item.nonFreqIncome),
+        freqExpense: Math.max(max.freqExpense, item.freqExpense),
+        nonFreqExpense: Math.max(max.nonFreqExpense, item.nonFreqExpense),
+        totalExpense: Math.max(max.totalExpense, item.totalExpense),
+        netMonthly: Math.max(max.netMonthly, Math.abs(item.netMonthly)),
+      }),
+      { freqIncome: 0, nonFreqIncome: 0, freqExpense: 0, nonFreqExpense: 0, totalExpense: 0, netMonthly: 0 },
+    );
+  }
+
+  /**
+   * Renderiza el strip de resumen (mini cards)
+   */
+  function renderDetailStrip(detailRows) {
+    const detailStrip = document.getElementById("detailSummaryStrip");
+    if (!detailStrip) return;
+
+    const getTop = (key) => detailRows.reduce((best, item) => (!best || item[key] > best[key] ? item : best), null);
+    const bestNet = detailRows.reduce((best, item) => (!best || item.netMonthly > best.netMonthly ? item : best), null);
+    const worstNet = detailRows.reduce((worst, item) => (!worst || item.netMonthly < worst.netMonthly ? item : worst), null);
+    const topIncome = getTop("totalIncome");
+    const topExpense = getTop("totalExpense");
+
+    const totalIncome = detailRows.reduce((sum, item) => sum + item.totalIncome, 0);
+    const totalExpense = detailRows.reduce((sum, item) => sum + item.totalExpense, 0);
+    const totalNet = detailRows.reduce((sum, item) => sum + item.netMonthly, 0);
+    const avgIncome = detailRows.length ? totalIncome / detailRows.length : 0;
+    const avgExpense = detailRows.length ? totalExpense / detailRows.length : 0;
+    const avgNet = detailRows.length ? totalNet / detailRows.length : 0;
+    const savingsRate = totalIncome > 0 ? Math.round((totalNet / totalIncome) * 100) : 0;
+
+    detailStrip.innerHTML = `
+      <div class="detail-mini-card detail-mini-period">
+        <span class="detail-mini-label">Periodo</span>
+        <strong>${detailRows.length} meses</strong>
+        <small class="detail-mini-note">${summarySelectedYear || "Todos"}</small>
+      </div>
+      <div class="detail-mini-card detail-mini-income">
+        <span class="detail-mini-label">Ingreso prom.</span>
+        <strong>${formatMoney(avgIncome)}</strong>
+        <small class="detail-mini-note">por mes</small>
+      </div>
+      <div class="detail-mini-card detail-mini-expense">
+        <span class="detail-mini-label">Gasto prom.</span>
+        <strong>${formatMoney(-avgExpense)}</strong>
+        <small class="detail-mini-note">por mes</small>
+      </div>
+      <div class="detail-mini-card detail-mini-net">
+        <span class="detail-mini-label">Neto prom.</span>
+        <strong>${formatMoney(avgNet)}</strong>
+        <small class="detail-mini-note">${savingsRate}% ahorro</small>
+      </div>
+      <div class="detail-mini-card detail-mini-income">
+        <span class="detail-mini-label">Mayor ingreso</span>
+        <strong>${topIncome ? topIncome.row.monthYear : "-"}</strong>
+        <small class="detail-mini-note">${topIncome ? formatMoney(topIncome.totalIncome) : "-"}</small>
+      </div>
+      <div class="detail-mini-card detail-mini-expense">
+        <span class="detail-mini-label">Mayor gasto</span>
+        <strong>${topExpense ? topExpense.row.monthYear : "-"}</strong>
+        <small class="detail-mini-note">${topExpense ? formatMoney(-topExpense.totalExpense) : "-"}</small>
+      </div>
+      <div class="detail-mini-card detail-mini-net">
+        <span class="detail-mini-label">Mejor neto</span>
+        <strong>${bestNet ? bestNet.row.monthYear : "-"}</strong>
+        <small class="detail-mini-note">${bestNet ? formatMoney(bestNet.netMonthly) : "-"}</small>
+      </div>
+      <div class="detail-mini-card detail-mini-risk">
+        <span class="detail-mini-label">Neto más bajo</span>
+        <strong>${worstNet ? worstNet.row.monthYear : "-"}</strong>
+        <small class="detail-mini-note">${worstNet ? formatMoney(worstNet.netMonthly) : "-"}</small>
+      </div>
+    `;
+  }
+
+  /**
+   * Renderiza las filas de la tabla de detalle mensual
+   */
+  function renderDetailTableRows(detailRows, maxBars) {
+    const tbody = document.getElementById("summaryTableBody");
+    if (!tbody) return;
+
+    tbody.innerHTML = "";
+    const fragment = document.createDocumentFragment();
+    const pct = (value, max) => max ? Math.min(100, (Math.abs(Number(value) || 0) / max) * 100) : 0;
+
+    let previousYear = "";
+    detailRows.forEach((item) => {
+      const { row } = item;
+      const [monthName, rowYear = ""] = String(row.monthYear || "").split(" ");
+      const isYearBreak = rowYear && previousYear && rowYear !== previousYear;
+      previousYear = rowYear || previousYear;
+
+      const tr = document.createElement("tr");
+      if (isYearBreak) tr.classList.add("summary-year-break");
+      tr.innerHTML = `
         <td>
           <span class="summary-month">
             <strong>${monthName || row.monthYear}</strong>
@@ -2385,14 +2331,261 @@
           <span class="summary-data-value">${formatMoney(row.netMonthly)}</span>
         </td>
       `;
-        fragment.appendChild(tr);
+      fragment.appendChild(tr);
+    });
+    tbody.appendChild(fragment);
+  }
+
+  // ============================================
+  // INTERANNUAL CHART HELPERS (Refactorizado)
+  // ============================================
+
+  /**
+   * Construye los datos por año para los gráficos interanuales
+   */
+  function buildInterannualData(metric) {
+    const yearsData = {}, incomeData = {}, expenseData = {};
+    const allYears = new Set();
+
+    summaries.forEach((s) => {
+      if (!s.monthYear) return;
+      const parts = s.monthYear.split(" ");
+      if (parts.length < 2) return;
+      const mName = parts[0], yearStr = parts[parts.length - 1];
+      if (!yearStr.match(/^\d{4}$/)) return;
+      const mIdx = monthNames.findIndex((m) => m.toLowerCase().startsWith(mName.toLowerCase().substring(0, 3)));
+      if (mIdx < 0) return;
+
+      allYears.add(yearStr);
+      if (!yearsData[yearStr]) yearsData[yearStr] = new Array(12).fill(0);
+      if (!incomeData[yearStr]) incomeData[yearStr] = new Array(12).fill(0);
+      if (!expenseData[yearStr]) expenseData[yearStr] = new Array(12).fill(0);
+
+      incomeData[yearStr][mIdx] = (Number(s.freqIncome) || 0) + (Number(s.nonFreqIncome) || 0);
+      expenseData[yearStr][mIdx] = Math.abs(Number(s.totalExpense) || 0);
+
+      const metrics = {
+        totalExpense: Math.abs(Number(s.totalExpense)),
+        freqExpense: Math.abs(Number(s.freqExpense)),
+        nonFreqExpense: Math.abs(Number(s.nonFreqExpense)),
+        totalIncome: incomeData[yearStr][mIdx],
+        freqIncome: Number(s.freqIncome) || 0,
+        nonFreqIncome: Number(s.nonFreqIncome) || 0,
+        netMonthly: Number(s.netMonthly) || 0,
+      };
+      yearsData[yearStr][mIdx] = metrics[metric] ?? 0;
+    });
+
+    return { yearsData, incomeData, expenseData, allYears: Array.from(allYears).sort() };
+  }
+
+  /**
+   * Construye datasets para el modo comparación (ingresos vs gastos)
+   */
+  function buildComparisonDatasets(summarySelectedYear, sortedYears, incomeData, expenseData, isMobile) {
+    const datasets = [];
+
+    if (summarySelectedYear === "Todos" || !summarySelectedYear) {
+      const yearlyIncomes = sortedYears.map((yr) => incomeData[yr].reduce((a, b) => a + b, 0));
+      const yearlyExpenses = sortedYears.map((yr) => expenseData[yr].reduce((a, b) => a + b, 0));
+      const yearlyNets = yearlyIncomes.map((inc, i) => inc - yearlyExpenses[i]);
+
+      datasets.push({
+        label: "Ingresos Totales", data: yearlyIncomes,
+        backgroundColor: "#00D26A", borderColor: "#00D26A", borderWidth: 1, borderRadius: 4, order: 2,
+        maxBarThickness: isMobile ? 18 : 55,
       });
-      tbody.appendChild(fragment);
+      datasets.push({
+        label: "Gastos Totales", data: yearlyExpenses.map((v) => -v),
+        backgroundColor: "#FF4D57", borderColor: "#FF4D57", borderWidth: 1, borderRadius: 4, order: 2,
+        maxBarThickness: isMobile ? 18 : 55,
+      });
+      datasets.push({
+        label: "Balance Neto", data: yearlyNets, type: "line",
+        borderColor: "#2D9CDB", backgroundColor: "rgba(45,156,219,0.20)",
+        borderWidth: 3, pointRadius: 5, pointBackgroundColor: "#2D9CDB", tension: 0.4, fill: true, order: 1,
+      });
+    } else {
+      const yr = summarySelectedYear;
+      if (sortedYears.includes(yr)) {
+        datasets.push({
+          label: `Ingresos ${yr}`, data: incomeData[yr],
+          backgroundColor: "#00D26A", borderColor: "#00D26A", borderWidth: 1, borderRadius: 4, order: 2,
+          maxBarThickness: isMobile ? 10 : 40,
+        });
+        datasets.push({
+          label: `Gastos ${yr}`, data: expenseData[yr].map((v) => -v),
+          backgroundColor: "#FF4D57", borderColor: "#FF4D57", borderWidth: 1, borderRadius: 4, order: 2,
+          maxBarThickness: isMobile ? 10 : 40,
+        });
+        const netVals = incomeData[yr].map((v, j) => v - expenseData[yr][j]);
+        datasets.push({
+          label: `Neto ${yr}`, data: netVals, type: "line",
+          borderColor: "#2D9CDB", backgroundColor: "rgba(45,156,219,0.20)",
+          borderWidth: 3, pointRadius: 5, pointBackgroundColor: "#2D9CDB", tension: 0.4, fill: true, order: 1,
+        });
+      }
     }
 
-    // Refresh header stats & interannual chart
-    sortAndRender();
-    setTimeout(renderCharts, 80);
+    return datasets;
+  }
+
+  /**
+   * Construye datasets para métricas específicas (un serie por año)
+   */
+  function buildMetricDatasets(metric, summarySelectedYear, sortedYears, yearsData, isMobile) {
+    const palette = [
+      { main: "#2D9CDB", light: "#78C6EF" },
+      { main: "#00D26A", light: "#70E7AA" },
+      { main: "#FF4D57", light: "#FF9AA0" },
+      { main: "#FFC145", light: "#FFD98A" },
+      { main: "#A855F7", light: "#C99CFF" },
+      { main: "#FF8A00", light: "#FFB35C" },
+    ];
+
+    const metricColors = {
+      totalExpense: palette[2], freqExpense: palette[2], nonFreqExpense: palette[3],
+      totalIncome: palette[1], freqIncome: palette[0], nonFreqIncome: palette[4], netMonthly: palette[5],
+    };
+
+    const datasets = [];
+    sortedYears.forEach((yr, i) => {
+      const isHighlighted = summarySelectedYear === "Todos" || summarySelectedYear === yr;
+      let c;
+      if (summarySelectedYear === "Todos") {
+        c = sortedYears.length === 1 ? metricColors[metric] || palette[0] : palette[i % palette.length];
+      } else {
+        c = isHighlighted ? metricColors[metric] || palette[0] : { main: "#56645e" };
+      }
+      datasets.push({
+        label: yr, data: yearsData[yr], type: "bar",
+        backgroundColor: isHighlighted ? c.main : c.main + "40",
+        borderColor: c.main, borderWidth: isHighlighted ? 1.5 : 0, borderRadius: 4,
+        barPercentage: isMobile ? 0.52 : 0.7, categoryPercentage: isMobile ? 0.64 : 0.8,
+        maxBarThickness: isMobile ? 9 : 36,
+      });
+    });
+
+    return datasets;
+  }
+
+  /**
+   * Calcula el ancho requerido para el gráfico
+   */
+  function calculateChartWidth(metric, summarySelectedYear, sortedYears, dataLen, barsPerLabel, isMobile, viewportW) {
+    const mobileBaseW = Math.max(viewportW - 44, 320);
+    let requiredW;
+
+    if (metric === "comparison" && (summarySelectedYear === "Todos" || !summarySelectedYear)) {
+      requiredW = isMobile ? Math.max(mobileBaseW, sortedYears.length * 74) : Math.max(420, sortedYears.length * 130);
+    } else if (metric === "comparison") {
+      requiredW = isMobile ? Math.max(mobileBaseW, dataLen * barsPerLabel * 13 + 58) : Math.max(620, dataLen * barsPerLabel * 40 + 100);
+    } else {
+      requiredW = isMobile ? Math.max(mobileBaseW, dataLen * barsPerLabel * 9 + 64) : Math.max(720, dataLen * barsPerLabel * 34 + 120);
+    }
+
+    return { requiredW, mobileBaseW };
+  }
+
+  /**
+   * Construye el contenedor HTML del gráfico
+   */
+  function buildChartContainer(chartTitle, isMobile, requiredW, mobileBaseW) {
+    const containerH = isMobile ? 324 : 370;
+    const innerStyle = isMobile
+      ? `position:relative; height:${containerH}px; min-width:${requiredW}px; width:${requiredW}px;`
+      : `position:relative; height:${containerH}px; width:100%;`;
+
+    return `
+      ${isMobile ? `
+        <div class="chart-mobile-head">
+          <div>
+            <span class="chart-mobile-kicker">Comparativa</span>
+            <h4>${chartTitle}</h4>
+          </div>
+          ${requiredW > mobileBaseW + 8 ? '<span class="chart-swipe-hint"><i class="fa-solid fa-arrows-left-right"></i> Desliza</span>' : ""}
+        </div>` : ""
+      }
+      <div class="chart-scroll-wrapper">
+        <div id="annualChartInner" style="${innerStyle}">
+          <canvas id="annualChart"></canvas>
+        </div>
+      </div>`;
+  }
+
+  /**
+   * Obtiene las opciones del gráfico interanual
+   */
+  function getInterannualChartOptions(metric, chartTitle, isMobile, themeColors) {
+    const isLight = currentTheme === "light";
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      layout: {
+        padding: { top: isMobile ? 18 : 42, bottom: isMobile ? 4 : 28, left: isMobile ? 0 : 10, right: isMobile ? 2 : 10 },
+      },
+      plugins: {
+        chartLabelGuidePlugin: {
+          enabled: !isMobile,
+          color: isLight ? "rgba(17,20,17,0.34)" : "rgba(247,248,244,0.38)",
+          labelBg: isLight ? "rgba(255,255,255,0.92)" : "rgba(2,4,3,0.78)",
+          labelBorder: isLight ? "rgba(0,0,0,0.10)" : "rgba(255,255,255,0.10)",
+          labelColor: isLight ? "#111411" : "#f7f8f4",
+          elbowLength: 6,
+        },
+        legend: {
+          display: true, position: "top", align: isMobile ? "start" : "center",
+          labels: {
+            color: themeColors.textMuted, usePointStyle: true, pointStyle: "circle",
+            font: { size: isMobile ? 10 : 12, family: "DM Sans", weight: "700" },
+            padding: isMobile ? 8 : 15, boxWidth: 8,
+          },
+        },
+        title: {
+          display: !isMobile, text: chartTitle, color: themeColors.textBodyColor,
+          align: "center", font: { size: 18, weight: "700", family: "DM Sans" }, padding: { bottom: 24 },
+        },
+        tooltip: {
+          backgroundColor: isLight ? "rgba(255,255,255,0.95)" : "rgba(15,17,16,0.95)",
+          titleColor: themeColors.textBodyColor, bodyColor: themeColors.textMuted,
+          borderColor: themeColors.borderColor, borderWidth: 1, padding: 12, cornerRadius: 8,
+          callbacks: { label: (ctx) => ` ${ctx.dataset.label}: S/ ${Math.abs(ctx.parsed.y).toFixed(2)}` },
+        },
+        datalabels: {
+          display: false, anchor: "end",
+          align: (ctx) => Number(ctx.dataset.data[ctx.dataIndex]) >= 0 ? "top" : "bottom",
+          offset: (ctx) => getChartLabelLane(ctx.chart, ctx.datasetIndex).offset,
+          color: isLight ? "#111411" : "#f7f8f4",
+          backgroundColor: isLight ? "rgba(255,255,255,0.92)" : "rgba(2,4,3,0.78)",
+          borderColor: isLight ? "rgba(0,0,0,0.10)" : "rgba(255,255,255,0.10)",
+          borderWidth: 1, borderRadius: 3,
+          padding: { top: 3, right: 5, bottom: 3, left: 5 },
+          font: { size: 11, weight: "800", family: "Segoe UI, Arial, sans-serif" },
+          formatter: (v) => `${Number(v) < 0 ? "-" : ""}S/${Math.abs(Number(v) || 0).toFixed(0)}`,
+          rotation: 0, textAlign: "center", clamp: true, clip: true,
+        },
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          grid: { color: themeColors.borderColorLight, drawBorder: false },
+          ticks: {
+            color: themeColors.textMuted, font: { size: isMobile ? 8 : 11, family: "DM Sans" },
+            maxTicksLimit: isMobile ? 5 : 8,
+            callback: (v) => "S/" + (Math.abs(v) >= 1000 ? (Math.abs(v) / 1000).toFixed(1) + "k" : Math.abs(v)),
+          },
+        },
+        x: {
+          grid: { display: false },
+          ticks: {
+            color: themeColors.textMuted, autoSkip: false, maxRotation: 0, minRotation: 0,
+            font: { size: isMobile ? 9 : 11, family: "DM Sans", weight: isMobile ? "700" : "500" },
+          },
+        },
+      },
+      interaction: { mode: "index", intersect: false },
+      animation: { duration: 1000, easing: "easeOutQuart" },
+    };
   }
 
   // ============================================
@@ -2493,191 +2686,26 @@
     const isMobile = window.innerWidth <= 768;
     const viewportW = Math.max(window.innerWidth || 390, 320);
 
-    // Build year-keyed data
-    const yearsData = {},
-      incomeData = {},
-      expenseData = {};
-    const allYears = new Set();
+    // Construir datos por año
+    const { yearsData, incomeData, expenseData, allYears: sortedYears } = buildInterannualData(metric);
 
-    summaries.forEach((s) => {
-      if (!s.monthYear) return;
-      const parts = s.monthYear.split(" ");
-      if (parts.length < 2) return;
-      const mName = parts[0],
-        yearStr = parts[parts.length - 1];
-      if (!yearStr.match(/^\d{4}$/)) return;
-      const mIdx = monthNames.findIndex((m) =>
-        m.toLowerCase().startsWith(mName.toLowerCase().substring(0, 3)),
-      );
-      if (mIdx < 0) return;
-      allYears.add(yearStr);
-      if (!yearsData[yearStr]) yearsData[yearStr] = new Array(12).fill(0);
-      if (!incomeData[yearStr]) incomeData[yearStr] = new Array(12).fill(0);
-      if (!expenseData[yearStr]) expenseData[yearStr] = new Array(12).fill(0);
-      incomeData[yearStr][mIdx] =
-        (Number(s.freqIncome) || 0) + (Number(s.nonFreqIncome) || 0);
-      expenseData[yearStr][mIdx] = Math.abs(Number(s.totalExpense) || 0);
-      const mm = {
-        totalExpense: Math.abs(Number(s.totalExpense)),
-        freqExpense: Math.abs(Number(s.freqExpense)),
-        nonFreqExpense: Math.abs(Number(s.nonFreqExpense)),
-        totalIncome: incomeData[yearStr][mIdx],
-        freqIncome: Number(s.freqIncome) || 0,
-        nonFreqIncome: Number(s.nonFreqIncome) || 0,
-        netMonthly: Number(s.netMonthly) || 0,
-      };
-      yearsData[yearStr][mIdx] = mm[metric] ?? 0;
-    });
-
-    const sortedYears = Array.from(allYears).sort();
-    // Always use full 12-month labels for monthly views
+    // Determinar labels y datasets según la métrica
     let mLabels = monthNames.map((m) => m.substring(0, 3));
-
-    const palette = [
-      { main: "#2D9CDB", light: "#78C6EF" },
-      { main: "#00D26A", light: "#70E7AA" },
-      { main: "#FF4D57", light: "#FF9AA0" },
-      { main: "#FFC145", light: "#FFD98A" },
-      { main: "#A855F7", light: "#C99CFF" },
-      { main: "#FF8A00", light: "#FFB35C" },
-    ];
-
-    let datasets = [];
+    let datasets;
 
     if (metric === "comparison") {
       if (summarySelectedYear === "Todos" || !summarySelectedYear) {
-        // OVERVIEW: X = Years, aggregate all months per year
         mLabels = sortedYears.slice();
-        const yearlyIncomes = sortedYears.map((yr) =>
-          incomeData[yr].reduce((a, b) => a + b, 0),
-        );
-        const yearlyExpenses = sortedYears.map((yr) =>
-          expenseData[yr].reduce((a, b) => a + b, 0),
-        );
-        const yearlyNets = yearlyIncomes.map(
-          (inc, i) => inc - yearlyExpenses[i],
-        );
-
-        datasets.push({
-          label: "Ingresos Totales",
-          data: yearlyIncomes,
-          backgroundColor: "#00D26A",
-          borderColor: "#00D26A",
-          borderWidth: 1,
-          borderRadius: 4,
-          order: 2,
-          maxBarThickness: isMobile ? 18 : 55,
-        });
-        datasets.push({
-          label: "Gastos Totales",
-          data: yearlyExpenses.map((v) => -v),
-          backgroundColor: "#FF4D57",
-          borderColor: "#FF4D57",
-          borderWidth: 1,
-          borderRadius: 4,
-          order: 2,
-          maxBarThickness: isMobile ? 18 : 55,
-        });
-        datasets.push({
-          label: "Balance Neto",
-          data: yearlyNets,
-          type: "line",
-          borderColor: "#2D9CDB",
-          backgroundColor: "rgba(45,156,219,0.20)",
-          borderWidth: 3,
-          pointRadius: 5,
-          pointBackgroundColor: "#2D9CDB",
-          tension: 0.4,
-          fill: true,
-          order: 1,
-        });
-      } else {
-        // SPECIFIC YEAR: X = Months
-        const yr = summarySelectedYear;
-        if (allYears.has(yr)) {
-          datasets.push({
-            label: `Ingresos ${yr}`,
-            data: incomeData[yr],
-            backgroundColor: "#00D26A",
-            borderColor: "#00D26A",
-            borderWidth: 1,
-            borderRadius: 4,
-            order: 2,
-            maxBarThickness: isMobile ? 10 : 40,
-          });
-          datasets.push({
-            label: `Gastos ${yr}`,
-            data: expenseData[yr].map((v) => -v),
-            backgroundColor: "#FF4D57",
-            borderColor: "#FF4D57",
-            borderWidth: 1,
-            borderRadius: 4,
-            order: 2,
-            maxBarThickness: isMobile ? 10 : 40,
-          });
-          const netVals = incomeData[yr].map((v, j) => v - expenseData[yr][j]);
-          datasets.push({
-            label: `Neto ${yr}`,
-            data: netVals,
-            type: "line",
-            borderColor: "#2D9CDB",
-            backgroundColor: "rgba(45,156,219,0.20)",
-            borderWidth: 3,
-            pointRadius: 5,
-            pointBackgroundColor: "#2D9CDB",
-            tension: 0.4,
-            fill: true,
-            order: 1,
-          });
-        }
       }
+      datasets = buildComparisonDatasets(summarySelectedYear, sortedYears, incomeData, expenseData, isMobile);
     } else {
-      // SPECIFIC METRIC: X = Months, one bar series per year
-      const metricColors = {
-        totalExpense: palette[2],
-        freqExpense: palette[2],
-        nonFreqExpense: palette[3],
-        totalIncome: palette[1],
-        freqIncome: palette[0],
-        nonFreqIncome: palette[4],
-        netMonthly: palette[5],
-      };
-
-      sortedYears.forEach((yr, i) => {
-        const isHighlighted =
-          summarySelectedYear === "Todos" || summarySelectedYear === yr;
-        let c;
-        if (summarySelectedYear === "Todos") {
-          c =
-            sortedYears.length === 1
-              ? metricColors[metric] || palette[0]
-              : palette[i % palette.length];
-        } else {
-          c = isHighlighted
-            ? metricColors[metric] || palette[0]
-            : { main: "#56645e" };
-        }
-        datasets.push({
-          label: yr,
-          data: yearsData[yr],
-          type: "bar",
-          backgroundColor: isHighlighted ? c.main : c.main + "40",
-          borderColor: c.main,
-          borderWidth: isHighlighted ? 1.5 : 0,
-          borderRadius: 4,
-          barPercentage: isMobile ? 0.52 : 0.7,
-          categoryPercentage: isMobile ? 0.64 : 0.8,
-          maxBarThickness: isMobile ? 9 : 36,
-        });
-      });
+      datasets = buildMetricDatasets(metric, summarySelectedYear, sortedYears, yearsData, isMobile);
     }
 
-    // ── Destroy previous chart ──
-    if (myChart) {
-      myChart.destroy();
-      myChart = null;
-    }
+    // Destruir gráfico anterior
+    if (myChart) { myChart.destroy(); myChart = null; }
 
+    // Títulos según métrica
     const titles = {
       comparison: "Comparativa de ingresos vs gastos por año",
       totalExpense: "Comparativa de gastos totales por año",
@@ -2689,208 +2717,26 @@
       netMonthly: "Evolución del balance neto anual",
     };
 
-    // ── Calculate required canvas width ──
-    const containerH = isMobile ? 324 : 370; // inner canvas height in px
+    const chartTitle = (titles[metric] || "Gráfico") +
+      (summarySelectedYear && summarySelectedYear !== "Todos" ? ` (${summarySelectedYear})` : "");
+
+    // Calcular dimensiones
     const dataLen = mLabels.length || 1;
-    const barsPerLabel =
-      datasets.filter((d) => d.type === "bar" || !d.type).length || 1;
-    const mobileBaseW = Math.max(viewportW - 44, 320);
-    let requiredW;
+    const barsPerLabel = datasets.filter((d) => d.type === "bar" || !d.type).length || 1;
+    const { requiredW, mobileBaseW } = calculateChartWidth(metric, summarySelectedYear, sortedYears, dataLen, barsPerLabel, isMobile, viewportW);
 
-    if (
-      metric === "comparison" &&
-      (summarySelectedYear === "Todos" || !summarySelectedYear)
-    ) {
-      // Few bars (one per year) - fit naturally but give room for data labels
-      requiredW = isMobile
-        ? Math.max(mobileBaseW, sortedYears.length * 74)
-        : Math.max(420, sortedYears.length * 130);
-    } else if (metric === "comparison") {
-      // 12 months × 2 bar datasets
-      requiredW = isMobile
-        ? Math.max(mobileBaseW, dataLen * barsPerLabel * 13 + 58)
-        : Math.max(620, dataLen * barsPerLabel * 40 + 100);
-    } else {
-      // 12 months × N years (up to 5)
-      requiredW = isMobile
-        ? Math.max(mobileBaseW, dataLen * barsPerLabel * 9 + 64)
-        : Math.max(720, dataLen * barsPerLabel * 34 + 120);
-    }
+    // Construir contenedor
+    chartContainer.innerHTML = buildChartContainer(chartTitle, isMobile, requiredW, mobileBaseW);
 
-    // ── Rebuild container markup with explicit pixel dimensions ──
-    const innerStyle = isMobile
-      ? `position:relative; height:${containerH}px; min-width:${requiredW}px; width:${requiredW}px;`
-      : `position:relative; height:${containerH}px; width:100%;`;
-    const chartTitle =
-      (titles[metric] || "Gráfico") +
-      (summarySelectedYear && summarySelectedYear !== "Todos"
-        ? ` (${summarySelectedYear})`
-        : "");
-    chartContainer.innerHTML = `
-    ${
-      isMobile
-        ? `
-      <div class="chart-mobile-head">
-        <div>
-          <span class="chart-mobile-kicker">Comparativa</span>
-          <h4>${chartTitle}</h4>
-        </div>
-        ${requiredW > mobileBaseW + 8 ? '<span class="chart-swipe-hint"><i class="fa-solid fa-arrows-left-right"></i> Desliza</span>' : ""}
-      </div>`
-        : ""
-    }
-    <div class="chart-scroll-wrapper">
-      <div id="annualChartInner" style="${innerStyle}">
-        <canvas id="annualChart"></canvas>
-      </div>
-    </div>`;
-
+    // Crear gráfico
     const canvas = document.getElementById("annualChart");
     registerChartPluginsOnce();
+    const themeColors = getThemeColors();
 
-    const getVar = (n) =>
-      getComputedStyle(document.body).getPropertyValue(n).trim() || "#fff";
-    const textBodyColor = getVar("--text-primary");
-    const textMuted = getVar("--text-secondary");
-    const tooltipBg =
-      currentTheme === "light"
-        ? "rgba(255,255,255,0.95)"
-        : "rgba(15,17,16,0.95)";
     myChart = new Chart(canvas.getContext("2d"), {
       type: "bar",
       data: { labels: mLabels, datasets },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        layout: {
-          padding: {
-            top: isMobile ? 18 : 42,
-            bottom: isMobile ? 4 : 28,
-            left: isMobile ? 0 : 10,
-            right: isMobile ? 2 : 10,
-          },
-        },
-        plugins: {
-          chartLabelGuidePlugin: {
-            enabled: !isMobile,
-            color:
-              currentTheme === "light"
-                ? "rgba(17,20,17,0.34)"
-                : "rgba(247,248,244,0.38)",
-            labelBg:
-              currentTheme === "light"
-                ? "rgba(255,255,255,0.92)"
-                : "rgba(2,4,3,0.78)",
-            labelBorder:
-              currentTheme === "light"
-                ? "rgba(0,0,0,0.10)"
-                : "rgba(255,255,255,0.10)",
-            labelColor: currentTheme === "light" ? "#111411" : "#f7f8f4",
-            elbowLength: 6,
-          },
-          legend: {
-            display: true,
-            position: "top",
-            align: isMobile ? "start" : "center",
-            labels: {
-              color: textMuted,
-              usePointStyle: true,
-              pointStyle: "circle",
-              font: {
-                size: isMobile ? 10 : 12,
-                family: "DM Sans",
-                weight: "700",
-              },
-              padding: isMobile ? 8 : 15,
-              boxWidth: 8,
-            },
-          },
-          title: {
-            display: !isMobile,
-            text: chartTitle,
-            color: textBodyColor,
-            align: "center",
-            font: { size: 18, weight: "700", family: "DM Sans" },
-            padding: { bottom: 24 },
-          },
-          tooltip: {
-            backgroundColor: tooltipBg,
-            titleColor: textBodyColor,
-            bodyColor: textMuted,
-            borderColor: getVar("--border-color"),
-            borderWidth: 1,
-            padding: 12,
-            cornerRadius: 8,
-            callbacks: {
-              label: (ctx) =>
-                ` ${ctx.dataset.label}: S/ ${Math.abs(ctx.parsed.y).toFixed(2)}`,
-            },
-          },
-          datalabels: {
-            display: false,
-            anchor: "end",
-            align: (ctx) =>
-              Number(ctx.dataset.data[ctx.dataIndex]) >= 0 ? "top" : "bottom",
-            offset: (ctx) =>
-              getChartLabelLane(ctx.chart, ctx.datasetIndex).offset,
-            color: currentTheme === "light" ? "#111411" : "#f7f8f4",
-            backgroundColor:
-              currentTheme === "light"
-                ? "rgba(255,255,255,0.92)"
-                : "rgba(2,4,3,0.78)",
-            borderColor:
-              currentTheme === "light"
-                ? "rgba(0,0,0,0.10)"
-                : "rgba(255,255,255,0.10)",
-            borderWidth: 1,
-            borderRadius: 3,
-            padding: { top: 3, right: 5, bottom: 3, left: 5 },
-            font: {
-              size: 11,
-              weight: "800",
-              family: "Segoe UI, Arial, sans-serif",
-            },
-            formatter: (v) =>
-              `${Number(v) < 0 ? "-" : ""}S/${Math.abs(Number(v) || 0).toFixed(0)}`,
-            rotation: 0,
-            textAlign: "center",
-            clamp: true,
-            clip: true,
-          },
-        },
-        scales: {
-          y: {
-            beginAtZero: true,
-            grid: { color: getVar("--border-color-light"), drawBorder: false },
-            ticks: {
-              color: textMuted,
-              font: { size: isMobile ? 8 : 11, family: "DM Sans" },
-              maxTicksLimit: isMobile ? 5 : 8,
-              callback: (v) =>
-                "S/" +
-                (Math.abs(v) >= 1000
-                  ? (Math.abs(v) / 1000).toFixed(1) + "k"
-                  : Math.abs(v)),
-            },
-          },
-          x: {
-            grid: { display: false },
-            ticks: {
-              color: textMuted,
-              autoSkip: false,
-              maxRotation: 0,
-              minRotation: 0,
-              font: {
-                size: isMobile ? 9 : 11,
-                family: "DM Sans",
-                weight: isMobile ? "700" : "500",
-              },
-            },
-          },
-        },
-        interaction: { mode: "index", intersect: false },
-        animation: { duration: 1000, easing: "easeOutQuart" },
-      },
+      options: getInterannualChartOptions(metric, chartTitle, isMobile, themeColors),
     });
   }
 </script>
