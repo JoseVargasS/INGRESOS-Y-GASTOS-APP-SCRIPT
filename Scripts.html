@@ -15,12 +15,14 @@
   var myChart = null;
   var isSearchActive = false;
   var searchResults = [];
+  var searchText = ""; // Texto de búsqueda actual para resaltado
 
   var lastDeletedTransaction = null;
   var undoTimeout = null;
   var currentChartMetric = "comparison";
   var chartPluginsRegistered = false;
   var resizeRenderTimer = null;
+  var currentDragOverRow = null; // Opt 1: referencia directa para drag-over
 
   function isChartBarDataset(chart, dataset) {
     return (
@@ -175,6 +177,23 @@
     "Diciembre",
   ];
 
+  // Opt 8: Mapa precalculado de nombre de mes → índice (O(1) lookup)
+  const MONTH_NAME_TO_INDEX = {};
+  monthNames.forEach((m, i) => {
+    MONTH_NAME_TO_INDEX[m.toLowerCase().substring(0, 3)] = i;
+  });
+
+  // Opt 6: Mapa de tipos abreviados (constante, no recrear en cada llamada)
+  const ABBREVIATE_TYPE_MAP = {
+    "GASTO NO FRECUENTE": "G. No Frec.",
+    "GASTO FRECUENTE": "G. Frec.",
+    "INGRESO NO FRECUENTE": "Ing. No Frec.",
+    "INGRESO FRECUENTE": "Ing. Frec.",
+  };
+
+  // Opt 2: Elemento temporal reutilizable para escapeHtml
+  const _escapeDiv = document.createElement("div");
+
   // DOM Elements
   const tabButtons = document.querySelectorAll(".nav-item");
   const contentViews = document.querySelectorAll(".content-view");
@@ -224,6 +243,18 @@
   const sidebarToggle = document.getElementById("sidebarToggle");
   const appSidebar = document.getElementById("appSidebar");
   const sidebarOverlay = document.getElementById("sidebarOverlay");
+
+  // Opt 9: Cached header stat elements (evitar getElementById en cada render)
+  const elStatFreqIncome = document.getElementById("statFreqIncome");
+  const elStatNoFreqIncome = document.getElementById("statNoFreqIncome");
+  const elStatFreqExpense = document.getElementById("statFreqExpense");
+  const elStatNoFreqExpense = document.getElementById("statNoFreqExpense");
+  const elStatTotalExpense = document.getElementById("statTotalExpense");
+  const elStatBalance = document.getElementById("statBalance");
+
+  // Opt 10: Referencias al tab/vista activo
+  let activeTabBtn = document.querySelector(".nav-item.active");
+  let activeView = document.querySelector(".content-view.active");
 
   function registerChartPluginsOnce() {
     if (
@@ -461,6 +492,7 @@
     });
 
     goToCurrentMonthBtn.addEventListener("click", () => {
+      if (isSearchActive) exitSearchMode();
       const now = new Date();
       currentYear = now.getFullYear();
       currentMonth = now.getMonth();
@@ -490,9 +522,15 @@
     }
 
     if (prevMonthBtnMobile)
-      prevMonthBtnMobile.addEventListener("click", () => changeMonth(-1));
+      prevMonthBtnMobile.addEventListener("click", () => {
+        if (isSearchActive) exitSearchMode();
+        changeMonth(-1);
+      });
     if (nextMonthBtnMobile)
-      nextMonthBtnMobile.addEventListener("click", () => changeMonth(1));
+      nextMonthBtnMobile.addEventListener("click", () => {
+        if (isSearchActive) exitSearchMode();
+        changeMonth(1);
+      });
 
     if (goToCurrentMonthBtnMobile) {
       goToCurrentMonthBtnMobile.addEventListener("click", () => {
@@ -513,6 +551,7 @@
     // Quick Months
     quickMonthChips.forEach((chip) => {
       chip.addEventListener("click", () => {
+        if (isSearchActive) exitSearchMode();
         currentMonth = parseInt(chip.getAttribute("data-month"));
         updateHeaderDate();
         loadTransactions();
@@ -537,21 +576,29 @@
     });
 
     // Tabs
+    // Opt 10: definir titles como constante fuera del listener
+    const TAB_TITLES = {
+      expenses: "Tabla de Gastos",
+      summary: "Análisis",
+    };
+
     tabButtons.forEach((btn) => {
       btn.addEventListener("click", () => {
-        tabButtons.forEach((b) => b.classList.remove("active"));
-        contentViews.forEach((v) => v.classList.remove("active"));
+        // Opt 10: solo desactivar el tab/vista actual en lugar de iterar todos
+        if (activeTabBtn) activeTabBtn.classList.remove("active");
+        if (activeView) activeView.classList.remove("active");
 
         btn.classList.add("active");
         const tabName = btn.getAttribute("data-tab");
-        document.getElementById("view-" + tabName).classList.add("active");
+        const newView = document.getElementById("view-" + tabName);
+        newView.classList.add("active");
+
+        // Opt 10: actualizar referencias activas
+        activeTabBtn = btn;
+        activeView = newView;
 
         // Update page title
-        const titles = {
-          expenses: "Tabla de Gastos",
-          summary: "Análisis",
-        };
-        document.getElementById("pageTitle").textContent = titles[tabName];
+        document.getElementById("pageTitle").textContent = TAB_TITLES[tabName];
         const subtitleEl = document.getElementById("pageSubtitle");
         if (tabName === "expenses") {
           subtitleEl.style.display = "block";
@@ -1061,53 +1108,60 @@
   }
 
   function addMathSymbol(symbol) {
-    const input = document.getElementById("inputAmount");
-    const start = input.selectionStart;
-    const end = input.selectionEnd;
-    const text = input.value;
+    // Opt 5: usar inputAmount cacheado en lugar de getElementById
+    const start = inputAmount.selectionStart;
+    const end = inputAmount.selectionEnd;
+    const text = inputAmount.value;
 
     // Insert symbol at cursor position
-    input.value = text.substring(0, start) + symbol + text.substring(end);
+    inputAmount.value = text.substring(0, start) + symbol + text.substring(end);
 
     // Move cursor to after the inserted symbol
     const newPos = start + symbol.length;
-    input.setSelectionRange(newPos, newPos);
+    inputAmount.setSelectionRange(newPos, newPos);
 
     // Trigger input event for preview
-    input.dispatchEvent(new Event("input", { bubbles: true }));
+    inputAmount.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
   function clearAmount() {
-    const input = document.getElementById("inputAmount");
-    input.value = "";
-    input.dispatchEvent(new Event("input", { bubbles: true }));
+    // Opt 5: usar inputAmount cacheado
+    inputAmount.value = "";
+    inputAmount.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
   function deleteLastChar() {
-    const input = document.getElementById("inputAmount");
-    const start = input.selectionStart;
-    const end = input.selectionEnd;
-    const text = input.value;
+    // Opt 5: usar inputAmount cacheado
+    const start = inputAmount.selectionStart;
+    const end = inputAmount.selectionEnd;
+    const text = inputAmount.value;
 
     if (start === end) {
       if (start > 0) {
-        input.value = text.substring(0, start - 1) + text.substring(end);
-        input.setSelectionRange(start - 1, start - 1);
+        inputAmount.value = text.substring(0, start - 1) + text.substring(end);
+        inputAmount.setSelectionRange(start - 1, start - 1);
       }
     } else {
-      input.value = text.substring(0, start) + text.substring(end);
-      input.setSelectionRange(start, start);
+      inputAmount.value = text.substring(0, start) + text.substring(end);
+      inputAmount.setSelectionRange(start, start);
     }
-    input.dispatchEvent(new Event("input", { bubbles: true }));
+    inputAmount.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
   function blurAmount() {
-    document.getElementById("inputAmount").blur();
+    // Opt 5: usar inputAmount cacheado
+    inputAmount.blur();
   }
 
   function calculateExpression(expression) {
     if (!expression) return 0;
+    // Opt 12: fast path para números simples sin operadores
+    if (/^-?\d+(\.\d+)?$/.test(expression.trim())) {
+      return parseFloat(expression);
+    }
     const cleanExpr = expression.replace(/[^0-9+\-*/.()]/g, "");
+    // Si después de limpiar no queda nada, no es una expresión válida
+    if (!cleanExpr) return null;
     try {
       return new Function("return " + cleanExpr)();
     } catch (e) {
@@ -1124,14 +1178,9 @@
   }
 
   function abbreviateType(type) {
+    // Opt 6: usar mapa global precalculado
     if (!type) return "";
-    const map = {
-      "GASTO NO FRECUENTE": "G. No Frec.",
-      "GASTO FRECUENTE": "G. Frec.",
-      "INGRESO NO FRECUENTE": "Ing. No Frec.",
-      "INGRESO FRECUENTE": "Ing. Frec.",
-    };
-    return map[type] || type;
+    return ABBREVIATE_TYPE_MAP[type] || type;
   }
 
   // ============================================
@@ -1202,6 +1251,9 @@
       return;
     }
 
+    // Guardar texto de búsqueda para resaltado
+    searchText = filters.text || "";
+
     document.getElementById("searchModal").classList.add("hidden");
     showTableSkeleton();
 
@@ -1218,9 +1270,9 @@
         showToast(`Se encontraron ${results.length} coincidencias`, "success");
 
         // Cambiar título
-        document.getElementById("pageTitle").innerText =
+        document.getElementById("pageTitle").textContent =
           "Resultados de Búsqueda";
-        document.getElementById("pageSubtitle").innerText = "Filtros aplicados";
+        document.getElementById("pageSubtitle").textContent = "Filtros aplicados";
       })
       .withFailureHandler((err) => {
         showToast("Error en búsqueda: " + err.message, "error");
@@ -1239,13 +1291,14 @@
       summary: "Dashboard",
       charts: "Gráficos Anuales",
     };
-    document.getElementById("pageTitle").innerText =
+    document.getElementById("pageTitle").textContent =
       titles[activeTab] || "Tabla de Gastos";
     updateHeaderDate();
   }
 
   function exitSearchMode() {
     isSearchActive = false;
+    searchText = ""; // Limpiar texto de búsqueda
     document.getElementById("searchActiveBanner").classList.add("hidden");
     document.querySelector(".header-stats-grid").style.display = "grid";
 
@@ -1361,7 +1414,7 @@
       const detailHtml = `
       <div class="detail-wrapper">
         <div class="detail-content check-overflow" id="detail-${tx.rowId}">
-          ${escapeHtml(detailText)}
+          ${isSearchActive && searchText ? highlightSearchMatch(detailText, searchText) : escapeHtml(detailText)}
         </div>
         <button class="btn-expand" style="display:none;" onclick="toggleDetail('${tx.rowId}', this)">+</button>
       </div>
@@ -1374,7 +1427,7 @@
       </td>
       <td class="${amountClass}">${amt >= 0 ? "+ S/ " : "- S/ "} ${Math.abs(amt).toFixed(2)}</td>
       <td>${detailHtml}</td>
-      <td><span class="${typePillClass}">${abbreviateType(tx.type)}</span></td>
+      <td><span class="${typePillClass}">${isSearchActive && searchText ? highlightSearchMatch(abbreviateType(tx.type), searchText) : abbreviateType(tx.type)}</span></td>
       <td>
         <div class="action-buttons-wrapper">
           <button class="action-btn edit" onclick="startEdit(${tx.rowId})" title="Editar">
@@ -1440,30 +1493,67 @@
     const finalIncome = Number(income) + freqInc;
     let balance = finalIncome + Number(expense);
 
-    const elFreqInc = document.getElementById("statFreqIncome");
-    const elNoFreqInc = document.getElementById("statNoFreqIncome");
-    const elFreqExp = document.getElementById("statFreqExpense");
-    const elNoFreqExp = document.getElementById("statNoFreqExpense");
-    const elTotalExp = document.getElementById("statTotalExpense");
-    const elBalance = document.getElementById("statBalance");
-
-    if (elFreqInc) elFreqInc.innerText = "+ S/ " + freqInc.toFixed(2);
-    if (elNoFreqInc)
-      elNoFreqInc.innerText = "+ S/ " + Math.abs(noFreqInc).toFixed(2);
-    if (elFreqExp) elFreqExp.innerText = "- S/ " + Math.abs(freqExp).toFixed(2);
-    if (elNoFreqExp)
-      elNoFreqExp.innerText = "- S/ " + Math.abs(noFreqExp).toFixed(2);
-    if (elTotalExp)
-      elTotalExp.innerText = "- S/ " + Math.abs(expense).toFixed(2);
-    if (elBalance)
-      elBalance.innerText =
+    // Opt 9: usar elementos cacheados + Opt 11: textContent en lugar de innerText
+    if (elStatFreqIncome) elStatFreqIncome.textContent = "+ S/ " + freqInc.toFixed(2);
+    if (elStatNoFreqIncome)
+      elStatNoFreqIncome.textContent = "+ S/ " + Math.abs(noFreqInc).toFixed(2);
+    if (elStatFreqExpense) elStatFreqExpense.textContent = "- S/ " + Math.abs(freqExp).toFixed(2);
+    if (elStatNoFreqExpense)
+      elStatNoFreqExpense.textContent = "- S/ " + Math.abs(noFreqExp).toFixed(2);
+    if (elStatTotalExpense)
+      elStatTotalExpense.textContent = "- S/ " + Math.abs(expense).toFixed(2);
+    if (elStatBalance)
+      elStatBalance.textContent =
         (balance >= 0 ? "+ S/ " : "- S/ ") + Math.abs(balance).toFixed(2);
   }
 
+  /**
+   * Recalcula y actualiza los stats del header desde transactionCache
+   * sin re-renderizar la tabla (evita parpadeo al editar)
+   */
+  function refreshHeaderStatsFromCache() {
+    if (!transactionCache || transactionCache.length === 0) {
+      updateHeaderStats(0, 0, 0, 0, 0);
+      return;
+    }
+
+    let totalIncome = 0, totalExpense = 0, freqExpense = 0, noFreqExpense = 0, noFreqIncome = 0;
+    transactionCache.forEach((tx) => {
+      if (tx.type === "INGRESO FRECUENTE") return; // Excluir como en renderTransactions
+      const amt = Number(tx.amount);
+      if (amt > 0) {
+        totalIncome += amt;
+        noFreqIncome += amt;
+      } else {
+        totalExpense += amt;
+        if (tx.type === "GASTO FRECUENTE") freqExpense += amt;
+        else noFreqExpense += amt;
+      }
+    });
+
+    updateHeaderStats(totalIncome, totalExpense, freqExpense, noFreqExpense, noFreqIncome);
+  }
+
   function escapeHtml(text) {
-    const div = document.createElement("div");
-    div.textContent = text;
-    return div.innerHTML;
+    // Opt 2: reutilizar elemento temporal en lugar de crear uno nuevo
+    _escapeDiv.textContent = text;
+    return _escapeDiv.innerHTML;
+  }
+
+  /**
+   * Resalta las coincidencias de búsqueda en un texto
+   * @param {string} text - Texto donde buscar
+   * @param {string} searchTerm - Término a resaltar
+   * @returns {string} HTML con las coincidencias resaltadas
+   */
+  function highlightSearchMatch(text, searchTerm) {
+    if (!searchTerm || !text) return escapeHtml(text);
+    
+    const escapedText = escapeHtml(text);
+    const escapedTerm = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // Escapar caracteres especiales de regex
+    const regex = new RegExp(`(${escapedTerm})`, 'gi');
+    
+    return escapedText.replace(regex, '<mark class="search-highlight">$1</mark>');
   }
 
   // ============================================
@@ -1494,11 +1584,12 @@
   };
 
   window.addEventListener("resize", () => {
-    checkDetailOverflows();
-    if (myChart) {
-      clearTimeout(resizeRenderTimer);
-      resizeRenderTimer = setTimeout(renderCharts, 160);
-    }
+    // Opt 4: debouncear checkDetailOverflows junto con renderCharts
+    clearTimeout(resizeRenderTimer);
+    resizeRenderTimer = setTimeout(() => {
+      checkDetailOverflows();
+      if (myChart) renderCharts();
+    }, 160);
   });
 
   // ============================================
@@ -1537,10 +1628,12 @@
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
     if (dragSrcEl !== this) {
-      document
-        .querySelectorAll("#transactionsTableBody tr")
-        .forEach((r) => r.classList.remove("drag-over"));
+      // Opt 1: solo quitar clase de la fila anterior en lugar de querySelectorAll
+      if (currentDragOverRow && currentDragOverRow !== this) {
+        currentDragOverRow.classList.remove("drag-over");
+      }
       this.classList.add("drag-over");
+      currentDragOverRow = this;
     }
     return false;
   }
@@ -1553,9 +1646,7 @@
     e.preventDefault();
     e.stopPropagation();
     this.classList.remove("drag-over");
-    document
-      .querySelectorAll("#transactionsTableBody tr")
-      .forEach((r) => r.classList.remove("drag-over"));
+    currentDragOverRow = null; // Opt 1: limpiar referencia
 
     if (dragSrcEl !== this) {
       const srcRowId = dragSrcEl.dataset.rowId;
@@ -1583,9 +1674,7 @@
 
   function handleDragEnd(e) {
     e.target.classList.remove("dragging");
-    document.querySelectorAll("#transactionsTableBody tr").forEach((row) => {
-      row.classList.remove("dragging");
-    });
+    currentDragOverRow = null; // Opt 1: limpiar referencia
   }
 
   function confirmDelete(rowId) {
@@ -1597,12 +1686,22 @@
       btn.disabled = true;
     }
 
+    // Spinner en el botón de confirmar eliminación del modal
+    const confirmBtn = document.getElementById("btnConfirmDelete");
+    const confirmBtnOriginalText = confirmBtn.innerHTML;
+    confirmBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Eliminando...';
+    confirmBtn.disabled = true;
+
     // Guardamos la transacción antes de eliminarla por si quieren deshacer
     lastDeletedTransaction = transactionCache.find((t) => t.rowId === rowId);
 
     google.script.run
       .withSuccessHandler(() => {
         deleteModal.classList.add("hidden");
+
+        // Restaurar botón del modal
+        confirmBtn.innerHTML = confirmBtnOriginalText;
+        confirmBtn.disabled = false;
 
         if (deleteRowId) {
           transactionCache = transactionCache.filter(
@@ -1627,6 +1726,9 @@
       })
       .withFailureHandler((error) => {
         deleteModal.classList.add("hidden");
+        // Restaurar botones
+        confirmBtn.innerHTML = confirmBtnOriginalText;
+        confirmBtn.disabled = false;
         if (btn) {
           btn.innerHTML = '<i class="fa-solid fa-trash"></i>';
           btn.disabled = false;
@@ -1872,8 +1974,8 @@
     renderDetailStrip(detailRows);
     renderDetailTableRows(detailRows, maxBars);
 
-    // Refrescar stats del header y gráfico interanual
-    sortAndRender();
+    // Refrescar stats del header (sin re-renderizar tabla para evitar parpadeo)
+    refreshHeaderStatsFromCache();
     setTimeout(renderCharts, 80);
   }
 
@@ -1976,7 +2078,9 @@
    * Obtiene los colores del tema actual
    */
   function getThemeColors() {
-    const getVar = (name) => getComputedStyle(document.body).getPropertyValue(name).trim() || "#fff";
+    // Opt 3: obtener getComputedStyle una sola vez
+    const style = getComputedStyle(document.body);
+    const getVar = (name) => style.getPropertyValue(name).trim() || "#fff";
     return {
       textBodyColor: getVar("--text-primary"),
       textMuted: getVar("--text-secondary"),
@@ -2127,8 +2231,9 @@
 
     yearData.forEach((s) => {
       const mName = s.monthYear.split(" ")[0].toLowerCase().substring(0, 3);
-      const idx = monthNames.findIndex((m) => m.toLowerCase().startsWith(mName));
-      if (idx > -1) {
+      // Opt 8: usar mapa precalculado O(1) en lugar de findIndex O(12)
+      const idx = MONTH_NAME_TO_INDEX[mName];
+      if (idx !== undefined) {
         incData[idx] += (Number(s.freqIncome) || 0) + (Number(s.nonFreqIncome) || 0);
         expData[idx] += Math.abs(Number(s.totalExpense) || 0);
       }
@@ -2180,6 +2285,20 @@
   }
 
   /**
+   * Determina la clase CSS para el color del valor basado en si es 0, positivo o negativo
+   * @param {number} value - El valor a evaluar
+   * @param {string} type - Tipo de valor: "income", "expense", "net"
+   * @returns {string} Clase CSS para el color
+   */
+  function getValueColorClass(value, type) {
+    if (value === 0) return "amount-neutral";
+    if (type === "income") return value > 0 ? "amount-positive" : "amount-negative";
+    if (type === "expense") return "amount-negative";
+    if (type === "net") return value >= 0 ? "amount-positive" : "amount-negative";
+    return "amount-neutral";
+  }
+
+  /**
    * Calcula las filas de detalle procesadas
    */
   function calculateDetailRows(yearData) {
@@ -2221,19 +2340,32 @@
     const detailStrip = document.getElementById("detailSummaryStrip");
     if (!detailStrip) return;
 
-    const getTop = (key) => detailRows.reduce((best, item) => (!best || item[key] > best[key] ? item : best), null);
-    const bestNet = detailRows.reduce((best, item) => (!best || item.netMonthly > best.netMonthly ? item : best), null);
-    const worstNet = detailRows.reduce((worst, item) => (!worst || item.netMonthly < worst.netMonthly ? item : worst), null);
-    const topIncome = getTop("totalIncome");
-    const topExpense = getTop("totalExpense");
+    // Opt 7: un solo reduce en lugar de 6 iteraciones independientes
+    const stats = detailRows.reduce((acc, item) => {
+      // Acumular totales
+      acc.totalIncome += item.totalIncome;
+      acc.totalExpense += item.totalExpense;
+      acc.totalNet += item.netMonthly;
 
-    const totalIncome = detailRows.reduce((sum, item) => sum + item.totalIncome, 0);
-    const totalExpense = detailRows.reduce((sum, item) => sum + item.totalExpense, 0);
-    const totalNet = detailRows.reduce((sum, item) => sum + item.netMonthly, 0);
-    const avgIncome = detailRows.length ? totalIncome / detailRows.length : 0;
-    const avgExpense = detailRows.length ? totalExpense / detailRows.length : 0;
-    const avgNet = detailRows.length ? totalNet / detailRows.length : 0;
-    const savingsRate = totalIncome > 0 ? Math.round((totalNet / totalIncome) * 100) : 0;
+      // Encontrar extremos
+      if (!acc.topIncome || item.totalIncome > acc.topIncome.totalIncome) acc.topIncome = item;
+      if (!acc.topExpense || item.totalExpense > acc.topExpense.totalExpense) acc.topExpense = item;
+      if (!acc.bestNet || item.netMonthly > acc.bestNet.netMonthly) acc.bestNet = item;
+      if (!acc.worstNet || item.netMonthly < acc.worstNet.netMonthly) acc.worstNet = item;
+
+      return acc;
+    }, {
+      totalIncome: 0, totalExpense: 0, totalNet: 0,
+      topIncome: null, topExpense: null, bestNet: null, worstNet: null
+    });
+
+    const count = detailRows.length;
+    const avgIncome = count ? stats.totalIncome / count : 0;
+    const avgExpense = count ? stats.totalExpense / count : 0;
+    const avgNet = count ? stats.totalNet / count : 0;
+    const savingsRate = stats.totalIncome > 0 ? Math.round((stats.totalNet / stats.totalIncome) * 100) : 0;
+
+    const { topIncome, topExpense, bestNet, worstNet } = stats;
 
     detailStrip.innerHTML = `
       <div class="detail-mini-card detail-mini-period">
@@ -2243,38 +2375,38 @@
       </div>
       <div class="detail-mini-card detail-mini-income">
         <span class="detail-mini-label">Ingreso prom.</span>
-        <strong>${formatMoney(avgIncome)}</strong>
+        <strong class="${getValueColorClass(avgIncome, "income")}">${formatMoney(avgIncome)}</strong>
         <small class="detail-mini-note">por mes</small>
       </div>
       <div class="detail-mini-card detail-mini-expense">
         <span class="detail-mini-label">Gasto prom.</span>
-        <strong>${formatMoney(-avgExpense)}</strong>
+        <strong class="${getValueColorClass(avgExpense, "expense")}">${formatMoney(-avgExpense)}</strong>
         <small class="detail-mini-note">por mes</small>
       </div>
       <div class="detail-mini-card detail-mini-net">
         <span class="detail-mini-label">Neto prom.</span>
-        <strong>${formatMoney(avgNet)}</strong>
+        <strong class="${getValueColorClass(avgNet, "net")}">${formatMoney(avgNet)}</strong>
         <small class="detail-mini-note">${savingsRate}% ahorro</small>
       </div>
       <div class="detail-mini-card detail-mini-income">
         <span class="detail-mini-label">Mayor ingreso</span>
         <strong>${topIncome ? topIncome.row.monthYear : "-"}</strong>
-        <small class="detail-mini-note">${topIncome ? formatMoney(topIncome.totalIncome) : "-"}</small>
+        <small class="detail-mini-note ${topIncome && topIncome.totalIncome === 0 ? "amount-neutral" : ""}">${topIncome ? formatMoney(topIncome.totalIncome) : "-"}</small>
       </div>
       <div class="detail-mini-card detail-mini-expense">
         <span class="detail-mini-label">Mayor gasto</span>
         <strong>${topExpense ? topExpense.row.monthYear : "-"}</strong>
-        <small class="detail-mini-note">${topExpense ? formatMoney(-topExpense.totalExpense) : "-"}</small>
+        <small class="detail-mini-note ${topExpense && topExpense.totalExpense === 0 ? "amount-neutral" : ""}">${topExpense ? formatMoney(-topExpense.totalExpense) : "-"}</small>
       </div>
       <div class="detail-mini-card detail-mini-net">
         <span class="detail-mini-label">Mejor neto</span>
         <strong>${bestNet ? bestNet.row.monthYear : "-"}</strong>
-        <small class="detail-mini-note">${bestNet ? formatMoney(bestNet.netMonthly) : "-"}</small>
+        <small class="detail-mini-note ${bestNet && bestNet.netMonthly === 0 ? "amount-neutral" : ""}">${bestNet ? formatMoney(bestNet.netMonthly) : "-"}</small>
       </div>
       <div class="detail-mini-card detail-mini-risk">
         <span class="detail-mini-label">Neto más bajo</span>
         <strong>${worstNet ? worstNet.row.monthYear : "-"}</strong>
-        <small class="detail-mini-note">${worstNet ? formatMoney(worstNet.netMonthly) : "-"}</small>
+        <small class="detail-mini-note ${worstNet && worstNet.netMonthly === 0 ? "amount-neutral" : ""}">${worstNet ? formatMoney(worstNet.netMonthly) : "-"}</small>
       </div>
     `;
   }
@@ -2306,27 +2438,27 @@
             <small>${rowYear}</small>
           </span>
         </td>
-        <td class="amount-positive summary-data-cell summary-income-freq" style="--bar:${pct(item.freqIncome, maxBars.freqIncome).toFixed(1)}%;">
+        <td class="${getValueColorClass(item.freqIncome, "income")} summary-data-cell summary-income-freq" style="--bar:${pct(item.freqIncome, maxBars.freqIncome).toFixed(1)}%;">
           <span class="summary-data-bar"></span>
           <span class="summary-data-value">${formatMoney(row.freqIncome)}</span>
         </td>
-        <td class="amount-positive summary-data-cell summary-income-extra" style="--bar:${pct(item.nonFreqIncome, maxBars.nonFreqIncome).toFixed(1)}%;">
+        <td class="${getValueColorClass(item.nonFreqIncome, "income")} summary-data-cell summary-income-extra" style="--bar:${pct(item.nonFreqIncome, maxBars.nonFreqIncome).toFixed(1)}%;">
           <span class="summary-data-bar"></span>
           <span class="summary-data-value">${formatMoney(row.nonFreqIncome)}</span>
         </td>
-        <td class="amount-negative summary-data-cell summary-expense-freq" style="--bar:${pct(item.freqExpense, maxBars.freqExpense).toFixed(1)}%;">
+        <td class="${getValueColorClass(item.freqExpense, "expense")} summary-data-cell summary-expense-freq" style="--bar:${pct(item.freqExpense, maxBars.freqExpense).toFixed(1)}%;">
           <span class="summary-data-bar"></span>
           <span class="summary-data-value">${formatMoney(row.freqExpense)}</span>
         </td>
-        <td class="amount-negative summary-data-cell summary-expense-extra" style="--bar:${pct(item.nonFreqExpense, maxBars.nonFreqExpense).toFixed(1)}%;">
+        <td class="${getValueColorClass(item.nonFreqExpense, "expense")} summary-data-cell summary-expense-extra" style="--bar:${pct(item.nonFreqExpense, maxBars.nonFreqExpense).toFixed(1)}%;">
           <span class="summary-data-bar"></span>
           <span class="summary-data-value">${formatMoney(row.nonFreqExpense)}</span>
         </td>
-        <td class="amount-negative summary-data-cell summary-expense-total" style="--bar:${pct(item.totalExpense, maxBars.totalExpense).toFixed(1)}%;">
+        <td class="${getValueColorClass(item.totalExpense, "expense")} summary-data-cell summary-expense-total" style="--bar:${pct(item.totalExpense, maxBars.totalExpense).toFixed(1)}%;">
           <span class="summary-data-bar"></span>
           <span class="summary-data-value">${formatMoney(row.totalExpense)}</span>
         </td>
-        <td class="${item.netMonthly >= 0 ? "amount-positive" : "amount-negative"} summary-data-cell ${item.netMonthly >= 0 ? "summary-net-positive" : "summary-net-negative"}" style="--bar:${pct(item.netMonthly, maxBars.netMonthly).toFixed(1)}%;">
+        <td class="${getValueColorClass(item.netMonthly, "net")} summary-data-cell ${item.netMonthly >= 0 ? "summary-net-positive" : "summary-net-negative"}" style="--bar:${pct(item.netMonthly, maxBars.netMonthly).toFixed(1)}%;">
           <span class="summary-data-bar"></span>
           <span class="summary-data-value">${formatMoney(row.netMonthly)}</span>
         </td>
@@ -2353,8 +2485,9 @@
       if (parts.length < 2) return;
       const mName = parts[0], yearStr = parts[parts.length - 1];
       if (!yearStr.match(/^\d{4}$/)) return;
-      const mIdx = monthNames.findIndex((m) => m.toLowerCase().startsWith(mName.toLowerCase().substring(0, 3)));
-      if (mIdx < 0) return;
+      // Opt 8: usar mapa precalculado O(1) en lugar de findIndex O(12)
+      const mIdx = MONTH_NAME_TO_INDEX[mName.toLowerCase().substring(0, 3)];
+      if (mIdx === undefined) return;
 
       allYears.add(yearStr);
       if (!yearsData[yearStr]) yearsData[yearStr] = new Array(12).fill(0);

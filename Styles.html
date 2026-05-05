@@ -66,14 +66,22 @@
     --text-secondary: #27372f;
     --text-muted: #66736c;
 
-    --border-color: #c8d4c0;
-    --border-color-light: #9aab90;
+    --border-color: #b8c9ae;
+    --border-color-light: #8ba37e;
 
-    /* Mantener acentos vibrantes pero adaptar luminosidad/sombras */
-    --accent-green-dark: #00a104;
-    --accent-red-dark: #a83d37;
-    --accent-blue-dark: #245845;
-    --accent-yellow-dark: #96700f;
+    /* Colores de acento más visibles para tema claro */
+    --accent-green: #c8ff00;
+    --accent-green-dark: #a7d600;
+    --accent-green-glow: rgba(200, 255, 0, 0.2);
+    --accent-red: #e53935;
+    --accent-red-dark: #c62828;
+    --accent-red-glow: rgba(229, 57, 53, 0.2);
+    --accent-blue: #1976d2;
+    --accent-blue-dark: #1565c0;
+    --accent-blue-glow: rgba(25, 118, 210, 0.2);
+    --accent-yellow: #f9a825;
+    --accent-yellow-dark: #f57f17;
+    --accent-yellow-glow: rgba(249, 168, 37, 0.2);
 
     --shadow-sm: 0 8px 22px rgba(20, 58, 42, 0.08);
     --shadow-md: 0 18px 42px rgba(20, 58, 42, 0.13);
@@ -1901,20 +1909,35 @@
     flex-direction: column;
     justify-content: center;
     gap: 2px;
+    transition: all var(--transition-fast);
+  }
+
+  .detail-mini-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
   }
 
   .detail-mini-card.detail-mini-income {
     border-left: 3px solid rgba(0, 210, 106, 0.75);
+    background:
+      linear-gradient(135deg, rgba(0, 210, 106, 0.12), transparent 60%),
+      rgba(255, 255, 255, 0.025);
   }
 
   .detail-mini-card.detail-mini-expense,
   .detail-mini-card.detail-mini-risk {
     border-left: 3px solid rgba(255, 77, 87, 0.75);
+    background:
+      linear-gradient(135deg, rgba(255, 77, 87, 0.12), transparent 60%),
+      rgba(255, 255, 255, 0.025);
   }
 
   .detail-mini-card.detail-mini-net,
   .detail-mini-card.detail-mini-period {
     border-left: 3px solid rgba(45, 156, 219, 0.75);
+    background:
+      linear-gradient(135deg, rgba(45, 156, 219, 0.12), transparent 60%),
+      rgba(255, 255, 255, 0.025);
   }
 
   .detail-mini-label {
@@ -2109,6 +2132,26 @@
     border-color: rgba(154, 171, 144, 0.65);
   }
 
+  [data-theme="light"] .detail-mini-card.detail-mini-income {
+    background:
+      linear-gradient(135deg, rgba(0, 180, 80, 0.10), transparent 60%),
+      rgba(255, 255, 255, 0.82);
+  }
+
+  [data-theme="light"] .detail-mini-card.detail-mini-expense,
+  [data-theme="light"] .detail-mini-card.detail-mini-risk {
+    background:
+      linear-gradient(135deg, rgba(220, 50, 50, 0.10), transparent 60%),
+      rgba(255, 255, 255, 0.82);
+  }
+
+  [data-theme="light"] .detail-mini-card.detail-mini-net,
+  [data-theme="light"] .detail-mini-card.detail-mini-period {
+    background:
+      linear-gradient(135deg, rgba(45, 156, 219, 0.10), transparent 60%),
+      rgba(255, 255, 255, 0.82);
+  }
+
   [data-theme="light"] .summary-table-container {
     background:
       linear-gradient(180deg, rgba(45, 156, 219, 0.07), transparent 34%),
@@ -2186,7 +2229,8 @@
     }
 
     .detail-summary-strip {
-      grid-template-columns: 1fr;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
     }
 
     .summary-table-container {
@@ -3082,6 +3126,21 @@
     transform: scale(1.05);
   }
 
+  /* Search Highlight */
+  .search-highlight {
+    background: rgba(255, 214, 0, 0.35);
+    color: inherit;
+    padding: 1px 4px;
+    border-radius: 4px;
+    font-weight: 600;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+  }
+
+  [data-theme="light"] .search-highlight {
+    background: rgba(255, 214, 0, 0.45);
+  }
+
   .form-row {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -3809,6 +3868,160 @@
     background: #dff7d2;
     border-color: #5c9f2f;
     color: #1b6f00;
+  }
+
+  /* Mejorar visibilidad de iconos en stat cards - tema claro */
+  [data-theme="light"] .stat-card.income .stat-icon {
+    color: #16a34a;
+  }
+
+  [data-theme="light"] .stat-card.income .stat-icon-wrapper {
+    background: rgba(22, 163, 74, 0.18);
+  }
+
+  [data-theme="light"] .stat-card.expense .stat-icon {
+    color: #dc2626;
+  }
+
+  [data-theme="light"] .stat-card.expense .stat-icon-wrapper {
+    background: rgba(220, 38, 38, 0.15);
+  }
+
+  [data-theme="light"] .stat-card.total-expense .stat-icon {
+    color: #d97706;
+  }
+
+  [data-theme="light"] .stat-card.total-expense .stat-icon-wrapper {
+    background: rgba(217, 119, 6, 0.15);
+  }
+
+  [data-theme="light"] .stat-card.balance .stat-icon {
+    color: #2563eb;
+  }
+
+  [data-theme="light"] .stat-card.balance .stat-icon-wrapper {
+    background: rgba(37, 99, 235, 0.15);
+  }
+
+  /* Valores de stat cards - tema claro */
+  [data-theme="light"] .stat-card.income .value {
+    color: #16a34a;
+  }
+
+  [data-theme="light"] .stat-card.expense .value {
+    color: #dc2626;
+  }
+
+  [data-theme="light"] .stat-card.total-expense .value {
+    color: #d97706;
+  }
+
+  [data-theme="light"] .stat-card.balance .value {
+    color: #2563eb;
+  }
+
+  /* KPI cards - tema claro */
+  [data-theme="light"] .income-kpi .dash-kpi-icon {
+    background: rgba(22, 163, 74, 0.18);
+    color: #16a34a;
+  }
+
+  [data-theme="light"] .income-kpi .dash-kpi-value {
+    color: #16a34a;
+  }
+
+  [data-theme="light"] .expense-kpi .dash-kpi-icon {
+    background: rgba(220, 38, 38, 0.15);
+    color: #dc2626;
+  }
+
+  [data-theme="light"] .expense-kpi .dash-kpi-value {
+    color: #dc2626;
+  }
+
+  [data-theme="light"] .net-kpi .dash-kpi-icon {
+    background: rgba(37, 99, 235, 0.15);
+    color: #2563eb;
+  }
+
+  [data-theme="light"] .net-kpi .dash-kpi-value {
+    color: #2563eb;
+  }
+
+  [data-theme="light"] .savings-kpi .dash-kpi-icon {
+    background: rgba(217, 119, 6, 0.15);
+    color: #d97706;
+  }
+
+  [data-theme="light"] .savings-kpi .dash-kpi-value {
+    color: #d97706;
+  }
+
+  /* Mejorar visibilidad de verdes en tema claro */
+  [data-theme="light"] .amount-positive {
+    color: #16a34a;
+  }
+
+  [data-theme="light"] .stat-card.income:hover {
+    border-color: #15803d;
+    box-shadow: 0 8px 25px rgba(22, 128, 61, 0.2);
+  }
+
+  [data-theme="light"] .stat-card.balance:hover {
+    border-color: var(--accent-blue);
+    box-shadow: 0 8px 25px var(--accent-blue-glow);
+  }
+
+  [data-theme="light"] .stat-card.expense:hover {
+    border-color: var(--accent-red);
+    box-shadow: 0 8px 25px var(--accent-red-glow);
+  }
+
+  [data-theme="light"] .stat-card.total-expense:hover {
+    border-color: var(--accent-yellow-dark);
+    box-shadow: 0 8px 25px var(--accent-yellow-glow);
+  }
+
+  [data-theme="light"] .nav-item.active {
+    background: linear-gradient(90deg, rgba(0, 230, 118, 0.15) 0%, transparent 100%);
+    color: var(--accent-green-dark);
+  }
+
+  [data-theme="light"] .nav-item.active::before {
+    background: var(--accent-green-dark);
+  }
+
+  [data-theme="light"] .month-chip.active {
+    background: linear-gradient(135deg, var(--accent-green) 0%, var(--accent-green-dark) 100%);
+    color: var(--bg-dark);
+    border-color: var(--accent-green);
+    box-shadow: 0 4px 15px var(--accent-green-glow);
+  }
+
+  [data-theme="light"] .year-chip-btn.active {
+    background: var(--accent-blue);
+    border-color: var(--accent-blue);
+    color: #ffffff;
+    box-shadow: 0 4px 16px var(--accent-blue-glow);
+  }
+
+  [data-theme="light"] .metric-pill.active {
+    background: var(--accent-blue);
+    border-color: var(--accent-blue);
+    color: #ffffff;
+    box-shadow: 0 3px 12px var(--accent-blue-glow);
+  }
+
+  [data-theme="light"] .pill-green {
+    background: rgba(22, 128, 61, 0.15);
+    color: #15803d;
+    border-color: rgba(22, 128, 61, 0.35);
+  }
+
+  [data-theme="light"] .action-btn.edit:hover {
+    background: rgba(22, 128, 61, 0.2);
+    border-color: #15803d;
+    box-shadow: 0 4px 12px rgba(22, 128, 61, 0.25);
   }
 
   .chart-mobile-head {
