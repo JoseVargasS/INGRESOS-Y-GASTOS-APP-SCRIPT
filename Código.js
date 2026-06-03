@@ -158,6 +158,93 @@ function getTransactions(month, year) {
 }
 
 /**
+ * Obtiene todas las transacciones dentro de un rango para exportacion.
+ * @param {string} startDate - Fecha inicial YYYY-MM-DD
+ * @param {string} endDate - Fecha final YYYY-MM-DD
+ * @returns {Array} Lista completa de transacciones del rango
+ */
+function getTransactionsForExport(startDate, endDate) {
+  var sheet = getSheetByName('INGRESOS Y GASTOS');
+  if (!sheet) {
+    throw new Error("No se encontro la hoja 'INGRESOS Y GASTOS'");
+  }
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+
+  var start = new Date(startDate + "T00:00:00");
+  var end = new Date(endDate + "T23:59:59");
+  if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) {
+    throw new Error("El rango de fechas no es valido");
+  }
+
+  var data = sheet.getRange(2, 1, lastRow - 1, 5).getValues();
+  var results = [];
+
+  for (var i = 0; i < data.length; i++) {
+    var row = data[i];
+    var rowDate = row[0] instanceof Date ? row[0] : new Date(row[0]);
+    if (isNaN(rowDate.getTime()) || rowDate < start || rowDate > end) continue;
+
+    results.push({
+      rowId: i + 2,
+      date: formatDateForSheet(rowDate),
+      rawDate: rowDate.toISOString(),
+      amount: row[1],
+      detail: row[2] || '',
+      type: row[3] || 'GASTO NO FRECUENTE',
+      createdAt: formatCreationDateForClient(row[4])
+    });
+  }
+
+  results.sort(function (a, b) {
+    return new Date(b.rawDate).getTime() - new Date(a.rawDate).getTime() || b.rowId - a.rowId;
+  });
+
+  return results;
+}
+
+/**
+ * Obtiene la primera y ultima fecha registrada en la hoja de movimientos.
+ * @returns {Object} Limites de fecha en formato YYYY-MM-DD
+ */
+function getTransactionDateBounds() {
+  var sheet = getSheetByName('INGRESOS Y GASTOS');
+  if (!sheet) {
+    throw new Error("No se encontro la hoja 'INGRESOS Y GASTOS'");
+  }
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return { minDate: '', maxDate: '' };
+
+  var dates = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  var minDate = null;
+  var maxDate = null;
+
+  for (var i = 0; i < dates.length; i++) {
+    var value = dates[i][0];
+    var dateObj = value instanceof Date ? value : new Date(value);
+    if (isNaN(dateObj.getTime())) continue;
+
+    if (!minDate || dateObj < minDate) minDate = dateObj;
+    if (!maxDate || dateObj > maxDate) maxDate = dateObj;
+  }
+
+  function toIsoDate(dateObj) {
+    if (!dateObj) return '';
+    var year = dateObj.getFullYear();
+    var month = String(dateObj.getMonth() + 1).padStart(2, '0');
+    var day = String(dateObj.getDate()).padStart(2, '0');
+    return year + '-' + month + '-' + day;
+  }
+
+  return {
+    minDate: toIsoDate(minDate),
+    maxDate: toIsoDate(maxDate)
+  };
+}
+
+/**
  * Inserta una fila de manera cronológica devolviendo el ID de fila
  */
 function insertRecordChronologically(sheet, dateObj, amount, detail, type, createdAt) {
@@ -194,7 +281,9 @@ function insertRecordChronologically(sheet, dateObj, amount, detail, type, creat
   }
   sheet.getRange(targetRow, 3).setValue(detail);
   sheet.getRange(targetRow, 4).setValue(type);
-  sheet.getRange(targetRow, 5).setValue(createdAt ? new Date(createdAt) : new Date());
+  sheet.getRange(targetRow, 5)
+    .setValue(createdAt ? new Date(createdAt) : new Date())
+    .setNumberFormat('HH:mm:ss');
 
   return targetRow;
 }

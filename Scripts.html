@@ -16,6 +16,9 @@
   var isSearchActive = false;
   var searchResults = [];
   var searchText = ""; // Texto de búsqueda actual para resaltado
+  var pendingExportFormat = "xlsx";
+  var exportRangeMode = "dates";
+  var exportDateBounds = { minDate: "", maxDate: "" };
 
   var lastDeletedTransaction = null;
   var undoTimeout = null;
@@ -210,6 +213,10 @@
   const inputType = document.getElementById("inputType");
   const transactionDetailModal = document.getElementById("transactionDetailModal");
   const closeTransactionDetailModal = document.getElementById("closeTransactionDetailModal");
+  const exportModal = document.getElementById("exportModal");
+  const closeExportModal = document.getElementById("closeExportModal");
+  const exportForm = document.getElementById("exportForm");
+  const btnCancelExport = document.getElementById("btnCancelExport");
 
   // Freq Income Modal Elements
   const freqIncomeModal = document.getElementById("freqIncomeModal");
@@ -423,6 +430,7 @@
     updateHeaderDate();
     loadTransactions();
     loadSummary();
+    loadExportDateBounds();
     setupEventListeners();
   });
 
@@ -779,6 +787,7 @@
       if (e.key === "Escape") {
         addModal.classList.add("hidden");
         transactionDetailModal.classList.add("hidden");
+        exportModal.classList.add("hidden");
         freqIncomeModal.classList.add("hidden");
         deleteModal.classList.add("hidden");
         document.getElementById("searchModal").classList.add("hidden");
@@ -789,8 +798,7 @@
 
     // Search Logic Listeners
     const btnOpenSearch = document.getElementById("btnOpenSearch");
-    const btnExportExcel = document.getElementById("btnExportExcel");
-    const btnExportPdf = document.getElementById("btnExportPdf");
+    const btnExport = document.getElementById("btnExport");
     const searchModal = document.getElementById("searchModal");
     const closeSearchModal = document.getElementById("closeSearchModal");
     const searchForm = document.getElementById("searchForm");
@@ -799,8 +807,16 @@
 
     if (btnOpenSearch)
       btnOpenSearch.onclick = () => searchModal.classList.remove("hidden");
-    if (btnExportExcel) btnExportExcel.onclick = exportTransactionsToExcel;
-    if (btnExportPdf) btnExportPdf.onclick = exportTransactionsToPdf;
+    if (btnExport) btnExport.onclick = openExportModal;
+    if (closeExportModal) closeExportModal.onclick = closeExportDialog;
+    if (btnCancelExport) btnCancelExport.onclick = closeExportDialog;
+    if (exportForm) exportForm.onsubmit = submitExportRange;
+    document.querySelectorAll(".export-range-tab").forEach((button) => {
+      button.onclick = () => setExportRangeMode(button.dataset.exportRange);
+    });
+    document.querySelectorAll(".export-format-tab").forEach((button) => {
+      button.onclick = () => setExportFormat(button.dataset.exportFormat);
+    });
     if (closeSearchModal) {
       closeSearchModal.onclick = () => searchModal.classList.add("hidden");
     }
@@ -829,6 +845,7 @@
       if (event.target === addModal) addModal.classList.add("hidden");
       if (event.target === transactionDetailModal)
         transactionDetailModal.classList.add("hidden");
+      if (event.target === exportModal) closeExportDialog();
       if (event.target === freqIncomeModal)
         freqIncomeModal.classList.add("hidden");
       if (event.target === deleteModal) deleteModal.classList.add("hidden");
@@ -1016,7 +1033,7 @@
     years.forEach((y) => {
       const div = document.createElement("div");
       div.className = "dropdown-option";
-      div.innerHTML = `<span>${y}</span> <i class="fa-solid fa-check" style="opacity: ${currentYear === y ? 1 : 0}; color: var(--accent-green);"></i>`;
+      div.innerHTML = `<span>${y}</span> <i class="fa-solid fa-check year-option-check" style="opacity: ${currentYear === y ? 1 : 0};"></i>`;
 
       div.addEventListener("click", () => {
         updateYearUI(y);
@@ -1442,6 +1459,7 @@
         <div class="detail-content check-overflow" id="detail-${tx.rowId}">
           ${isSearchActive && searchText ? highlightSearchMatch(detailText, searchText) : escapeHtml(detailText)}
         </div>
+        <button class="detail-expand-btn" type="button" data-detail-id="${tx.rowId}" onclick="toggleDetailExpansion(event, ${tx.rowId})" title="Ver detalle completo" aria-label="Ver detalle completo">+</button>
       </div>
     `;
 
@@ -1590,18 +1608,51 @@
   // ============================================
   window.checkDetailOverflows = function () {
     document.querySelectorAll(".detail-content").forEach((content) => {
-      content.classList.toggle(
-        "is-overflowing",
-        content.scrollWidth > content.clientWidth + 1,
-      );
+      const isExpanded = content.classList.contains("is-expanded");
+      const isOverflowing = !isExpanded && content.scrollWidth > content.clientWidth + 1;
+      content.classList.toggle("is-overflowing", isOverflowing);
+      const button = content.parentElement.querySelector(".detail-expand-btn");
+      if (button) button.classList.toggle("visible", isOverflowing || isExpanded);
     });
+  };
+
+  window.toggleDetailExpansion = function (event, rowId) {
+    event.stopPropagation();
+    const content = document.getElementById(`detail-${rowId}`);
+    if (!content) return;
+    clearTimeout(content._detailCollapseTimer);
+    const isExpanded = !content.classList.contains("is-expanded");
+    if (isExpanded) {
+      content.style.maxHeight = `${content.offsetHeight}px`;
+      content.classList.add("is-expanded");
+      content.classList.remove("is-overflowing");
+      const expandedHeight = content.scrollHeight;
+      requestAnimationFrame(() => {
+        content.style.maxHeight = `${expandedHeight}px`;
+      });
+    } else {
+      content.style.maxHeight = `${content.scrollHeight}px`;
+      content.getBoundingClientRect();
+      content.style.maxHeight = "26px";
+      content._detailCollapseTimer = setTimeout(() => {
+        content.classList.remove("is-expanded");
+        content.style.maxHeight = "";
+        checkDetailOverflows();
+      }, 270);
+    }
+    const button = content.parentElement.querySelector(".detail-expand-btn");
+    if (button) {
+      button.textContent = isExpanded ? "−" : "+";
+      button.title = isExpanded ? "Ocultar detalle completo" : "Ver detalle completo";
+      button.setAttribute("aria-label", button.title);
+    }
   };
 
   function formatCreatedAt(createdAt) {
     if (!createdAt) return "No disponible";
     const date = new Date(createdAt);
     if (isNaN(date.getTime())) return String(createdAt);
-    return date.toLocaleString("es-PE", {
+    return date.toLocaleTimeString("es-PE", {
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",
@@ -1610,6 +1661,14 @@
 
   function openTransactionDetail(tx) {
     const amount = Number(tx.amount) || 0;
+    const detailModal = transactionDetailModal.querySelector(".modal-detail");
+    detailModal.classList.remove(
+      "type-gasto-frecuente",
+      "type-gasto-no-frecuente",
+      "type-ingreso-frecuente",
+      "type-ingreso-no-frecuente",
+    );
+    detailModal.classList.add(`type-${String(tx.type || "").toLowerCase().replace(/\s+/g, "-")}`);
     document.getElementById("detailModalDate").textContent = tx.date || "-";
     document.getElementById("detailModalCreatedTime").textContent =
       formatCreatedAt(tx.createdAt);
@@ -1620,30 +1679,161 @@
     transactionDetailModal.classList.remove("hidden");
   }
 
-  function getExportTransactions() {
-    const source = isSearchActive ? searchResults : transactionCache;
-    return (source || []).filter((tx) => tx.type !== "INGRESO FRECUENTE");
-  }
-
-  function getExportRows() {
-    return getExportTransactions().map((tx) => ({
+  function getExportRows(transactions) {
+    return (transactions || [])
+      .filter((tx) => tx.type !== "INGRESO FRECUENTE")
+      .map((tx) => ({
       Fecha: tx.date || "",
       Hora: formatCreatedAt(tx.createdAt),
       Monto: Number(tx.amount) || 0,
       Detalle: tx.detail || "",
       Tipo: tx.type || "",
-    }));
+      }));
   }
 
-  function getExportFileName(extension) {
-    const period = isSearchActive
-      ? "busqueda"
-      : `${monthNames[currentMonth].toLowerCase()}-${currentYear}`;
+  function getExportFileName(extension, startDate, endDate) {
+    const period = `${startDate || "inicio"}_a_${endDate || "hoy"}`;
     return `bucks-manager-${period}.${extension}`;
   }
 
-  function exportTransactionsToExcel() {
-    const rows = getExportRows();
+  function setExportRangeMode(mode) {
+    exportRangeMode = mode === "months" ? "months" : "dates";
+    document.querySelectorAll(".export-range-tab").forEach((button) => {
+      button.classList.toggle("active", button.dataset.exportRange === exportRangeMode);
+    });
+    document.getElementById("exportDateRange").classList.toggle("hidden", exportRangeMode !== "dates");
+    document.getElementById("exportMonthRange").classList.toggle("hidden", exportRangeMode !== "months");
+  }
+
+  function setExportFormat(format) {
+    pendingExportFormat = format === "pdf" ? "pdf" : "xlsx";
+    document.querySelectorAll(".export-format-tab").forEach((button) => {
+      const isActive = button.dataset.exportFormat === pendingExportFormat;
+      button.classList.toggle("active", isActive);
+      button.setAttribute("aria-checked", String(isActive));
+    });
+    document.getElementById("btnConfirmExport").innerHTML =
+      `<i class="fa-solid fa-download"></i> Exportar ${pendingExportFormat === "pdf" ? "PDF" : "Excel"}`;
+  }
+
+  function applyExportDateBounds(bounds) {
+    exportDateBounds = bounds || { minDate: "", maxDate: "" };
+    const minDate = exportDateBounds.minDate || "";
+    const minMonth = minDate ? minDate.slice(0, 7) : "";
+    const dateInputs = [
+      document.getElementById("exportStartDate"),
+      document.getElementById("exportEndDate"),
+    ];
+    const monthInputs = [
+      document.getElementById("exportStartMonth"),
+      document.getElementById("exportEndMonth"),
+    ];
+
+    dateInputs.forEach((input) => {
+      input.min = minDate;
+    });
+    monthInputs.forEach((input) => {
+      input.min = minMonth;
+    });
+
+    const startDateInput = dateInputs[0];
+    const startMonthInput = monthInputs[0];
+    if (minDate && startDateInput.value < minDate) startDateInput.value = minDate;
+    if (minMonth && startMonthInput.value < minMonth) startMonthInput.value = minMonth;
+  }
+
+  function loadExportDateBounds() {
+    google.script.run
+      .withSuccessHandler(applyExportDateBounds)
+      .withFailureHandler((error) => {
+        showToast("No se pudo obtener la primera fecha registrada: " + error.message, "error");
+      })
+      .getTransactionDateBounds();
+  }
+
+  function openExportModal() {
+    const startOfMonth = new Date(currentYear, currentMonth, 1);
+    const endOfMonth = new Date(currentYear, currentMonth + 1, 0);
+    const monthValue = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}`;
+
+    document.getElementById("exportStartDate").value = formatDateToISO(startOfMonth);
+    document.getElementById("exportEndDate").value = formatDateToISO(endOfMonth);
+    document.getElementById("exportStartMonth").value = monthValue;
+    document.getElementById("exportEndMonth").value = monthValue;
+    setExportFormat("xlsx");
+    setExportRangeMode("dates");
+    applyExportDateBounds(exportDateBounds);
+    exportModal.classList.remove("hidden");
+    loadExportDateBounds();
+  }
+
+  function closeExportDialog() {
+    exportModal.classList.add("hidden");
+  }
+
+  function getSelectedExportRange() {
+    if (exportRangeMode === "months") {
+      const startMonth = document.getElementById("exportStartMonth").value;
+      const endMonth = document.getElementById("exportEndMonth").value;
+      if (!startMonth || !endMonth) return null;
+      const [endYear, endMonthNumber] = endMonth.split("-").map(Number);
+      return {
+        startDate: `${startMonth}-01`,
+        endDate: formatDateToISO(new Date(endYear, endMonthNumber, 0)),
+      };
+    }
+
+    return {
+      startDate: document.getElementById("exportStartDate").value,
+      endDate: document.getElementById("exportEndDate").value,
+    };
+  }
+
+  function submitExportRange(event) {
+    event.preventDefault();
+    const range = getSelectedExportRange();
+    if (!range || !range.startDate || !range.endDate) {
+      showToast("Selecciona el rango que deseas exportar", "info");
+      return;
+    }
+    if (range.startDate > range.endDate) {
+      showToast("La fecha inicial no puede ser posterior a la fecha final", "error");
+      return;
+    }
+    const isBeforeFirstRecord = exportRangeMode === "months"
+      ? exportDateBounds.minDate && range.startDate.slice(0, 7) < exportDateBounds.minDate.slice(0, 7)
+      : exportDateBounds.minDate && range.startDate < exportDateBounds.minDate;
+    if (isBeforeFirstRecord) {
+      showToast(`La exportación debe iniciar desde ${exportDateBounds.minDate} o una fecha posterior`, "info");
+      return;
+    }
+
+    const button = document.getElementById("btnConfirmExport");
+    const originalHtml = button.innerHTML;
+    button.disabled = true;
+    button.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Preparando...';
+
+    google.script.run
+      .withSuccessHandler((transactions) => {
+        button.disabled = false;
+        button.innerHTML = originalHtml;
+        closeExportDialog();
+        if (pendingExportFormat === "pdf") {
+          exportTransactionsToPdf(transactions, range);
+        } else {
+          exportTransactionsToExcel(transactions, range);
+        }
+      })
+      .withFailureHandler((error) => {
+        button.disabled = false;
+        button.innerHTML = originalHtml;
+        showToast("Error al preparar la exportación: " + error.message, "error");
+      })
+      .getTransactionsForExport(range.startDate, range.endDate);
+  }
+
+  function exportTransactionsToExcel(transactions, range) {
+    const rows = getExportRows(transactions);
     if (!rows.length) {
       showToast("No hay datos para exportar", "info");
       return;
@@ -1663,12 +1853,12 @@
     ];
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Movimientos");
-    XLSX.writeFile(workbook, getExportFileName("xlsx"));
+    XLSX.writeFile(workbook, getExportFileName("xlsx", range.startDate, range.endDate));
     showToast("Excel exportado correctamente", "success");
   }
 
-  function exportTransactionsToPdf() {
-    const rows = getExportRows();
+  function exportTransactionsToPdf(transactions, range) {
+    const rows = getExportRows(transactions);
     if (!rows.length) {
       showToast("No hay datos para exportar", "info");
       return;
@@ -1683,13 +1873,7 @@
     doc.setFontSize(16);
     doc.text("Bucks Manager - Movimientos", 14, 16);
     doc.setFontSize(10);
-    doc.text(
-      isSearchActive
-        ? "Resultados de búsqueda"
-        : `${monthNames[currentMonth]} ${currentYear}`,
-      14,
-      23,
-    );
+    doc.text(`Del ${range.startDate} al ${range.endDate}`, 14, 23);
     doc.autoTable({
       startY: 29,
       head: [["Fecha", "Hora", "Monto", "Detalle", "Tipo"]],
@@ -1704,7 +1888,7 @@
       headStyles: { fillColor: [25, 35, 45] },
       columnStyles: { 3: { cellWidth: 105 } },
     });
-    doc.save(getExportFileName("pdf"));
+    doc.save(getExportFileName("pdf", range.startDate, range.endDate));
     showToast("PDF exportado correctamente", "success");
   }
 
@@ -2193,7 +2377,7 @@
 
     if (kpiNet) {
       kpiNet.textContent = (netBalance >= 0 ? "+ " : "- ") + "S/ " + Math.abs(netBalance).toFixed(2);
-      kpiNet.style.color = netBalance >= 0 ? "var(--accent-green)" : "var(--accent-red)";
+      kpiNet.style.color = netBalance >= 0 ? "var(--accent-green-readable)" : "var(--accent-red)";
     }
 
     if (kpiSR) {

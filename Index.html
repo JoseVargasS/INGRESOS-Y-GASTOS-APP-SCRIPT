@@ -128,11 +128,8 @@
             <button class="icon-btn-header" id="btnOpenSearch" title="Búsqueda Avanzada">
               <i class="fa-solid fa-magnifying-glass"></i>
             </button>
-            <button class="icon-btn-header" id="btnExportExcel" title="Exportar a Excel">
-              <i class="fa-solid fa-file-excel"></i>
-            </button>
-            <button class="icon-btn-header" id="btnExportPdf" title="Exportar a PDF">
-              <i class="fa-solid fa-file-pdf"></i>
+            <button class="icon-btn-header" id="btnExport" title="Exportar movimientos">
+              <i class="fa-solid fa-file-export"></i>
             </button>
           </div>
         </header>
@@ -392,6 +389,89 @@
               <strong id="detailModalDetail">-</strong>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Export Modal -->
+    <div id="exportModal" class="modal-overlay hidden">
+      <div class="modal modal-export">
+        <div class="modal-header export-modal-header">
+          <div>
+            <span class="export-modal-kicker">Movimientos</span>
+            <h3 id="exportModalTitle"><i class="fa-solid fa-file-export"></i> Exportar movimientos</h3>
+          </div>
+          <button class="close-modal" id="closeExportModal"><i class="fa-solid fa-times"></i></button>
+        </div>
+        <div class="modal-body">
+          <form id="exportForm">
+            <div class="export-section-label">Formato</div>
+            <div class="export-format-tabs" role="radiogroup" aria-label="Formato de exportación">
+              <button type="button" class="export-format-tab active" data-export-format="xlsx" role="radio" aria-checked="true">
+                <i class="fa-solid fa-file-excel"></i>
+                <span>Excel</span>
+              </button>
+              <button type="button" class="export-format-tab" data-export-format="pdf" role="radio" aria-checked="false">
+                <i class="fa-solid fa-file-pdf"></i>
+                <span>PDF</span>
+              </button>
+            </div>
+
+            <div class="export-section-label">Rango</div>
+            <div class="export-range-tabs" role="tablist" aria-label="Tipo de rango">
+              <button type="button" class="export-range-tab active" data-export-range="dates">
+                <i class="fa-regular fa-calendar-days"></i> Por fechas
+              </button>
+              <button type="button" class="export-range-tab" data-export-range="months">
+                <i class="fa-regular fa-calendar"></i> Por meses
+              </button>
+            </div>
+
+            <div id="exportDateRange" class="export-range-panel">
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Desde</label>
+                  <div class="export-date-input">
+                    <input type="date" id="exportStartDate" required>
+                    <i class="fa-regular fa-calendar-days"></i>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label>Hasta</label>
+                  <div class="export-date-input">
+                    <input type="date" id="exportEndDate" required>
+                    <i class="fa-regular fa-calendar-days"></i>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div id="exportMonthRange" class="export-range-panel hidden">
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Mes inicial</label>
+                  <div class="export-date-input">
+                    <input type="month" id="exportStartMonth">
+                    <i class="fa-regular fa-calendar"></i>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label>Mes final</label>
+                  <div class="export-date-input">
+                    <input type="month" id="exportEndMonth">
+                    <i class="fa-regular fa-calendar"></i>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <p class="export-range-note"><i class="fa-solid fa-circle-info"></i> Se exportaran todos los movimientos dentro del rango seleccionado.</p>
+
+            <div class="modal-actions">
+              <button type="button" class="btn-cancel" id="btnCancelExport"><i class="fa-solid fa-times"></i> Cancelar</button>
+              <button type="submit" class="btn-save" id="btnConfirmExport"><i class="fa-solid fa-download"></i> Exportar</button>
+            </div>
+          </form>
         </div>
       </div>
     </div>
