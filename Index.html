@@ -23,6 +23,9 @@
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
   
   <?!= include('Styles'); ?>
   </head>
@@ -124,6 +127,12 @@
             
             <button class="icon-btn-header" id="btnOpenSearch" title="Búsqueda Avanzada">
               <i class="fa-solid fa-magnifying-glass"></i>
+            </button>
+            <button class="icon-btn-header" id="btnExportExcel" title="Exportar a Excel">
+              <i class="fa-solid fa-file-excel"></i>
+            </button>
+            <button class="icon-btn-header" id="btnExportPdf" title="Exportar a PDF">
+              <i class="fa-solid fa-file-pdf"></i>
             </button>
           </div>
         </header>
@@ -351,6 +360,40 @@
         <i class="fa-solid fa-plus"></i>
         <span class="fab-tooltip">Nuevo</span>
       </button>
+    </div>
+
+    <!-- Transaction Detail Modal -->
+    <div id="transactionDetailModal" class="modal-overlay hidden">
+      <div class="modal modal-detail">
+        <div class="modal-header">
+          <h3><i class="fa-solid fa-receipt"></i> Detalle del gasto</h3>
+          <button class="close-modal" id="closeTransactionDetailModal"><i class="fa-solid fa-times"></i></button>
+        </div>
+        <div class="modal-body">
+          <div class="transaction-detail-grid">
+            <div class="transaction-detail-item">
+              <span>Fecha</span>
+              <strong id="detailModalDate">-</strong>
+            </div>
+            <div class="transaction-detail-item">
+              <span>Hora de creación</span>
+              <strong id="detailModalCreatedTime">-</strong>
+            </div>
+            <div class="transaction-detail-item">
+              <span>Monto</span>
+              <strong id="detailModalAmount">-</strong>
+            </div>
+            <div class="transaction-detail-item">
+              <span>Tipo</span>
+              <strong id="detailModalType">-</strong>
+            </div>
+            <div class="transaction-detail-item transaction-detail-full">
+              <span>Detalle</span>
+              <strong id="detailModalDetail">-</strong>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Freq Income Edit Modal -->

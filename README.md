@@ -51,9 +51,9 @@ Respeta mayusculas, espacios y tildes tal como aparecen arriba.
 
 Fila 1:
 
-| A | B | C | D |
-| --- | --- | --- | --- |
-| Fecha | Monto | Detalle | Tipo |
+| A | B | C | D | E |
+| --- | --- | --- | --- | --- |
+| Fecha | Monto | Detalle | Tipo | Hora de creación |
 
 Uso de columnas:
 
@@ -61,6 +61,7 @@ Uso de columnas:
 - `Monto`: numero. Los ingresos deben ser positivos y los gastos negativos.
 - `Detalle`: descripcion libre del movimiento.
 - `Tipo`: uno de los cuatro tipos soportados por la app.
+- `Hora de creación`: fecha y hora automática del registro. La app crea esta cabecera al guardar un movimiento si todavía no existe.
 
 Ejemplo:
 

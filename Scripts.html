@@ -208,6 +208,8 @@
   const addForm = document.getElementById("addForm");
   const inputAmount = document.getElementById("inputAmount");
   const inputType = document.getElementById("inputType");
+  const transactionDetailModal = document.getElementById("transactionDetailModal");
+  const closeTransactionDetailModal = document.getElementById("closeTransactionDetailModal");
 
   // Freq Income Modal Elements
   const freqIncomeModal = document.getElementById("freqIncomeModal");
@@ -551,6 +553,7 @@
     // Quick Months
     quickMonthChips.forEach((chip) => {
       chip.addEventListener("click", () => {
+        if (chip.disabled) return;
         if (isSearchActive) exitSearchMode();
         currentMonth = parseInt(chip.getAttribute("data-month"));
         updateHeaderDate();
@@ -659,6 +662,9 @@
 
     closeModal.addEventListener("click", hideModal);
     btnCancel.addEventListener("click", hideModal);
+    closeTransactionDetailModal.addEventListener("click", () => {
+      transactionDetailModal.classList.add("hidden");
+    });
 
     // Delete Modal
     btnCancelDelete.addEventListener("click", () => {
@@ -772,6 +778,7 @@
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
         addModal.classList.add("hidden");
+        transactionDetailModal.classList.add("hidden");
         freqIncomeModal.classList.add("hidden");
         deleteModal.classList.add("hidden");
         document.getElementById("searchModal").classList.add("hidden");
@@ -782,6 +789,8 @@
 
     // Search Logic Listeners
     const btnOpenSearch = document.getElementById("btnOpenSearch");
+    const btnExportExcel = document.getElementById("btnExportExcel");
+    const btnExportPdf = document.getElementById("btnExportPdf");
     const searchModal = document.getElementById("searchModal");
     const closeSearchModal = document.getElementById("closeSearchModal");
     const searchForm = document.getElementById("searchForm");
@@ -790,6 +799,8 @@
 
     if (btnOpenSearch)
       btnOpenSearch.onclick = () => searchModal.classList.remove("hidden");
+    if (btnExportExcel) btnExportExcel.onclick = exportTransactionsToExcel;
+    if (btnExportPdf) btnExportPdf.onclick = exportTransactionsToPdf;
     if (closeSearchModal) {
       closeSearchModal.onclick = () => searchModal.classList.add("hidden");
     }
@@ -816,6 +827,8 @@
     // Close modals on overlay click
     window.onclick = (event) => {
       if (event.target === addModal) addModal.classList.add("hidden");
+      if (event.target === transactionDetailModal)
+        transactionDetailModal.classList.add("hidden");
       if (event.target === freqIncomeModal)
         freqIncomeModal.classList.add("hidden");
       if (event.target === deleteModal) deleteModal.classList.add("hidden");
@@ -1073,6 +1086,18 @@
     if (text) text.textContent = year;
     if (quickMonthsYearText) quickMonthsYearText.textContent = " " + year;
     currentYear = year;
+    updateQuickMonthAvailability();
+  }
+
+  function updateQuickMonthAvailability() {
+    const now = new Date();
+    quickMonthChips.forEach((chip) => {
+      const month = parseInt(chip.getAttribute("data-month"));
+      const isFuture = currentYear > now.getFullYear() ||
+        (currentYear === now.getFullYear() && month > now.getMonth());
+      chip.disabled = isFuture;
+      chip.title = isFuture ? "Este mes aún no está disponible" : "";
+    });
   }
 
   function updateHeaderDate() {
@@ -1088,6 +1113,7 @@
         parseInt(chip.getAttribute("data-month")) === currentMonth,
       );
     });
+    updateQuickMonthAvailability();
   }
 
   function changeMonth(delta) {
@@ -1416,7 +1442,6 @@
         <div class="detail-content check-overflow" id="detail-${tx.rowId}">
           ${isSearchActive && searchText ? highlightSearchMatch(detailText, searchText) : escapeHtml(detailText)}
         </div>
-        <button class="btn-expand" style="display:none;" onclick="toggleDetail('${tx.rowId}', this)">+</button>
       </div>
     `;
 
@@ -1443,6 +1468,10 @@
       // Add Drag & Drop attributes
       row.draggable = true;
       row.dataset.rowId = tx.rowId;
+      row.addEventListener("click", (event) => {
+        if (event.target.closest(".action-buttons-wrapper, .drag-handle")) return;
+        openTransactionDetail(tx);
+      });
       row.addEventListener("dragstart", handleDragStart);
       row.addEventListener("dragover", handleDragOver);
       row.addEventListener("dragleave", handleDragLeave);
@@ -1560,28 +1589,124 @@
   // DETAIL EXPANSION
   // ============================================
   window.checkDetailOverflows = function () {
-    document.querySelectorAll(".detail-wrapper").forEach((wrapper) => {
-      const content = wrapper.querySelector(".detail-content");
-      const btn = wrapper.querySelector(".btn-expand");
-      if (!content || !btn) return;
-
-      if (content.scrollWidth > content.clientWidth + 1) {
-        btn.style.display = "flex";
-      } else {
-        if (!content.classList.contains("expanded")) {
-          btn.style.display = "none";
-        }
-      }
+    document.querySelectorAll(".detail-content").forEach((content) => {
+      content.classList.toggle(
+        "is-overflowing",
+        content.scrollWidth > content.clientWidth + 1,
+      );
     });
   };
 
-  window.toggleDetail = function (rowId, btn) {
-    const el = document.getElementById("detail-" + rowId);
-    if (el) {
-      el.classList.toggle("expanded");
-      btn.textContent = el.classList.contains("expanded") ? "−" : "+";
+  function formatCreatedAt(createdAt) {
+    if (!createdAt) return "No disponible";
+    const date = new Date(createdAt);
+    if (isNaN(date.getTime())) return String(createdAt);
+    return date.toLocaleString("es-PE", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  }
+
+  function openTransactionDetail(tx) {
+    const amount = Number(tx.amount) || 0;
+    document.getElementById("detailModalDate").textContent = tx.date || "-";
+    document.getElementById("detailModalCreatedTime").textContent =
+      formatCreatedAt(tx.createdAt);
+    document.getElementById("detailModalAmount").textContent =
+      `${amount >= 0 ? "+ S/ " : "- S/ "}${Math.abs(amount).toFixed(2)}`;
+    document.getElementById("detailModalType").textContent = tx.type || "-";
+    document.getElementById("detailModalDetail").textContent = tx.detail || "-";
+    transactionDetailModal.classList.remove("hidden");
+  }
+
+  function getExportTransactions() {
+    const source = isSearchActive ? searchResults : transactionCache;
+    return (source || []).filter((tx) => tx.type !== "INGRESO FRECUENTE");
+  }
+
+  function getExportRows() {
+    return getExportTransactions().map((tx) => ({
+      Fecha: tx.date || "",
+      Hora: formatCreatedAt(tx.createdAt),
+      Monto: Number(tx.amount) || 0,
+      Detalle: tx.detail || "",
+      Tipo: tx.type || "",
+    }));
+  }
+
+  function getExportFileName(extension) {
+    const period = isSearchActive
+      ? "busqueda"
+      : `${monthNames[currentMonth].toLowerCase()}-${currentYear}`;
+    return `bucks-manager-${period}.${extension}`;
+  }
+
+  function exportTransactionsToExcel() {
+    const rows = getExportRows();
+    if (!rows.length) {
+      showToast("No hay datos para exportar", "info");
+      return;
     }
-  };
+    if (typeof XLSX === "undefined") {
+      showToast("No se pudo cargar el exportador de Excel", "error");
+      return;
+    }
+
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    worksheet["!cols"] = [
+      { wch: 14 },
+      { wch: 18 },
+      { wch: 14 },
+      { wch: 42 },
+      { wch: 24 },
+    ];
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Movimientos");
+    XLSX.writeFile(workbook, getExportFileName("xlsx"));
+    showToast("Excel exportado correctamente", "success");
+  }
+
+  function exportTransactionsToPdf() {
+    const rows = getExportRows();
+    if (!rows.length) {
+      showToast("No hay datos para exportar", "info");
+      return;
+    }
+    if (!window.jspdf || !window.jspdf.jsPDF) {
+      showToast("No se pudo cargar el exportador de PDF", "error");
+      return;
+    }
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: "landscape" });
+    doc.setFontSize(16);
+    doc.text("Bucks Manager - Movimientos", 14, 16);
+    doc.setFontSize(10);
+    doc.text(
+      isSearchActive
+        ? "Resultados de búsqueda"
+        : `${monthNames[currentMonth]} ${currentYear}`,
+      14,
+      23,
+    );
+    doc.autoTable({
+      startY: 29,
+      head: [["Fecha", "Hora", "Monto", "Detalle", "Tipo"]],
+      body: rows.map((row) => [
+        row.Fecha,
+        row.Hora,
+        `S/ ${row.Monto.toFixed(2)}`,
+        row.Detalle,
+        row.Tipo,
+      ]),
+      styles: { fontSize: 8, cellPadding: 2.5 },
+      headStyles: { fillColor: [25, 35, 45] },
+      columnStyles: { 3: { cellWidth: 105 } },
+    });
+    doc.save(getExportFileName("pdf"));
+    showToast("PDF exportado correctamente", "success");
+  }
 
   window.addEventListener("resize", () => {
     // Opt 4: debouncear checkDetailOverflows junto con renderCharts
@@ -1708,7 +1833,7 @@
             (t) => t.rowId !== deleteRowId,
           );
           sortAndRender();
-          loadSummary();
+          loadSummary(true);
         }
 
         deleteRowId = null;
@@ -1753,13 +1878,14 @@
       amount: lastDeletedTransaction.amount,
       detail: lastDeletedTransaction.detail,
       type: lastDeletedTransaction.type,
+      createdAt: lastDeletedTransaction.createdAt,
     };
 
     const finishUndo = (restoredTransaction) => {
       if (restoredTransaction) {
         transactionCache.unshift(restoredTransaction);
         sortAndRender();
-        loadSummary();
+        loadSummary(true);
       } else {
         // Si la fecha no cae en el mes actual simplemente recargamos
         loadTransactions();
@@ -1874,7 +2000,7 @@
         if (index > -1) {
           transactionCache[index] = updatedTransaction;
           sortAndRender();
-          loadSummary();
+          loadSummary(true);
         }
       }
       showToast("Cambios guardados correctamente", "success");
@@ -1890,6 +2016,7 @@
         transactionCache.unshift(newTransaction);
         sortAndRender();
       }
+      loadSummary(true);
       showToast("Registro agregado correctamente", "success");
     };
 
@@ -1915,13 +2042,14 @@
   // ============================================
   // SUMMARY
   // ============================================
-  function loadSummary() {
-    showSummarySkeleton();
+  function loadSummary(silent = false) {
+    if (!silent) showSummarySkeleton();
 
     google.script.run
       .withSuccessHandler((data) => {
         summaries = data;
         renderSummaryTable(data);
+        refreshHeaderStatsFromCache();
       })
       .withFailureHandler((error) => {
         showToast("Error al cargar resumen: " + error.message, "error");

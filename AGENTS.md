@@ -25,6 +25,7 @@ The app expects two sheets with exact names:
    - Column B: Amount (positive for income, negative for expenses)
    - Column C: Detail (free description)
    - Column D: Type (one of the four supported types)
+   - Column E: Creation timestamp (auto-generated for new transactions)
 
 2. **RESUMEN POR MES** - Monthly summary sheet
    - Column A: Month (first day of month as date)

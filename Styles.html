@@ -540,6 +540,15 @@
     box-shadow: 0 6px 20px var(--accent-green-glow);
   }
 
+  .month-chip:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+    border-color: var(--border-color);
+    color: var(--text-muted);
+  }
+
   /* Footer Note */
   .footer-note {
     margin-top: auto;
@@ -1392,12 +1401,12 @@
       transform 0.2s ease,
       box-shadow 0.2s ease,
       background-color 0.2s ease;
+    cursor: pointer;
   }
 
-  /* Expandable Details */
+  /* Transaction Details */
   .detail-wrapper {
     position: relative;
-    padding-right: 28px;
     min-height: 20px;
     display: flex;
     align-items: flex-start;
@@ -1406,53 +1415,70 @@
   .detail-content {
     white-space: nowrap;
     overflow: hidden;
-    text-overflow: ellipsis;
+    text-overflow: clip;
     display: block;
     width: 100%;
     max-width: 410px;
     font-size: 17px;
     line-height: 1.5;
-    padding-right: 5px;
+    padding-right: 18px;
     color: var(--text-primary);
   }
 
-  .detail-content.expanded {
-    white-space: normal;
-    word-break: break-word;
+  .detail-content.is-overflowing {
+    -webkit-mask-image: linear-gradient(to right, #000 0%, #000 82%, transparent 100%);
+    mask-image: linear-gradient(to right, #000 0%, #000 82%, transparent 100%);
   }
 
-  .btn-expand {
-    position: absolute;
-    top: 0;
-    right: 0;
-    width: 22px;
-    height: 22px;
+  .modal-detail {
+    width: 560px;
+  }
+
+  .transaction-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+  }
+
+  .transaction-detail-item {
     background: var(--bg-input);
-    border: 1.5px solid var(--border-color);
-    color: var(--accent-blue);
-    font-size: 17px;
-    cursor: pointer;
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 700;
-    transition: all var(--transition-fast);
-    padding: 0;
-    line-height: 1;
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    padding: 15px 16px;
+    min-width: 0;
   }
 
-  .btn-expand:hover {
-    background: var(--accent-blue);
-    border-color: var(--accent-blue);
-    color: white;
-    transform: scale(1.1);
+  .transaction-detail-item span {
+    display: block;
+    color: var(--text-muted);
+    font-size: 12px;
+    margin-bottom: 6px;
+  }
+
+  .transaction-detail-item strong {
+    display: block;
+    color: var(--text-primary);
+    font-size: 15px;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+  }
+
+  .transaction-detail-full {
+    grid-column: 1 / -1;
   }
 
   @media (max-width: 768px) {
     .detail-content {
       max-width: 140px;
       font-size: 15px;
+    }
+
+    .transaction-detail-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .transaction-detail-full {
+      grid-column: auto;
     }
   }
 
@@ -3694,7 +3720,6 @@
   .icon-btn-header:hover,
   .nav-arrow:hover,
   .sidebar-toggle:hover,
-  .btn-expand:hover,
   .btn-icon-mobile:hover,
   .month-nav-mobile button:hover {
     background: var(--accent-green) !important;

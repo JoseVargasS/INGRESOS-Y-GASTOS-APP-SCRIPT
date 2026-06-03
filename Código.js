@@ -54,6 +54,13 @@ function formatDateForSheet(dateObj) {
   return day + '-' + month + '-' + year;
 }
 
+function formatCreationDateForClient(value) {
+  if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value.getTime())) {
+    return value.toISOString();
+  }
+  return value ? String(value) : '';
+}
+
 /**
  * Encuentra la fila de encabezado en la hoja de resumen
  * @param {Array} data - Datos de la hoja
@@ -92,8 +99,8 @@ function getTransactions(month, year) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return [];
 
-  // Obtener datos A2:D
-  var range = sheet.getRange(2, 1, lastRow - 1, 4);
+  // Obtener datos A2:E
+  var range = sheet.getRange(2, 1, lastRow - 1, 5);
   var data = range.getValues();
   var formulas = sheet.getRange(2, 2, lastRow - 1, 1).getFormulas();
 
@@ -136,7 +143,8 @@ function getTransactions(month, year) {
         amount: row[1],
         formula: formula,
         detail: row[2] || '',
-        type: row[3] || 'GASTO NO FRECUENTE'
+        type: row[3] || 'GASTO NO FRECUENTE',
+        createdAt: formatCreationDateForClient(row[4])
       });
     }
   }
@@ -152,7 +160,7 @@ function getTransactions(month, year) {
 /**
  * Inserta una fila de manera cronológica devolviendo el ID de fila
  */
-function insertRecordChronologically(sheet, dateObj, amount, detail, type) {
+function insertRecordChronologically(sheet, dateObj, amount, detail, type, createdAt) {
   var lastRow = sheet.getLastRow();
   var targetRow = lastRow + 1;
   var targetDateMs = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate()).getTime();
@@ -186,6 +194,7 @@ function insertRecordChronologically(sheet, dateObj, amount, detail, type) {
   }
   sheet.getRange(targetRow, 3).setValue(detail);
   sheet.getRange(targetRow, 4).setValue(type);
+  sheet.getRange(targetRow, 5).setValue(createdAt ? new Date(createdAt) : new Date());
 
   return targetRow;
 }
@@ -209,7 +218,12 @@ function _addTransactionCore(transactionData) {
   var sheet = getSheetByName('INGRESOS Y GASTOS');
   if (!sheet) throw new Error("No se encontró la hoja 'INGRESOS Y GASTOS'");
 
-  var targetRow = insertRecordChronologically(sheet, dateObj, transactionData.amount, transactionData.detail, transactionData.type);
+  if (!sheet.getRange(1, 5).getValue()) {
+    sheet.getRange(1, 5).setValue('HORA DE CREACIÓN');
+  }
+
+  var targetRow = insertRecordChronologically(sheet, dateObj, transactionData.amount, transactionData.detail, transactionData.type, transactionData.createdAt);
+  SpreadsheetApp.flush();
 
   return { dateObj: dateObj, targetRow: targetRow, sheet: sheet };
 }
@@ -239,6 +253,7 @@ function addTransactionOptimized(transactionData, month, year) {
   if (dateObj.getMonth() === month && dateObj.getFullYear() === year) {
     var formula = sheet.getRange(targetRow, 2).getFormula();
     var actualAmount = sheet.getRange(targetRow, 2).getValue();
+    var createdAt = sheet.getRange(targetRow, 5).getValue();
 
     return {
       rowId: targetRow,
@@ -247,7 +262,8 @@ function addTransactionOptimized(transactionData, month, year) {
       amount: actualAmount,
       formula: formula,
       detail: transactionData.detail,
-      type: transactionData.type
+      type: transactionData.type,
+      createdAt: formatCreationDateForClient(createdAt)
     };
   }
 
@@ -295,6 +311,7 @@ function editTransaction(rowId, transactionData) {
     // Obtener valores actualizados para el retorno optimizado
     var formula = sheet.getRange(rowId, 2).getFormula();
     var actualAmount = sheet.getRange(rowId, 2).getValue();
+    var createdAt = sheet.getRange(rowId, 5).getValue();
 
     return {
       rowId: rowId,
@@ -303,7 +320,8 @@ function editTransaction(rowId, transactionData) {
       amount: actualAmount,
       formula: formula,
       detail: transactionData.detail,
-      type: transactionData.type
+      type: transactionData.type,
+      createdAt: formatCreationDateForClient(createdAt)
     };
   } catch (e) {
     throw new Error('Error al editar: ' + e.toString());
@@ -338,9 +356,9 @@ function moveTransactionDown(rowId) {
 }
 
 function swapRows(sheet, rowId1, rowId2) {
-  // Solo obtener y setear valores planos de Date, Amount, Detail, y Type (Columnas A - D)
-  var range1 = sheet.getRange(rowId1, 1, 1, 4);
-  var range2 = sheet.getRange(rowId2, 1, 1, 4);
+  // Obtener y setear Date, Amount, Detail, Type y hora de creación (Columnas A - E)
+  var range1 = sheet.getRange(rowId1, 1, 1, 5);
+  var range2 = sheet.getRange(rowId2, 1, 1, 5);
 
   var values1 = range1.getValues()[0];
   var values2 = range2.getValues()[0];
@@ -547,7 +565,7 @@ function getAdvancedTransactions(filters) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return [];
 
-  var data = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
+  var data = sheet.getRange(2, 1, lastRow - 1, 5).getValues();
   var results = [];
 
   var text = (filters.text || "").toLowerCase().trim();
@@ -586,7 +604,8 @@ function getAdvancedTransactions(filters) {
       date: formatDateForSheet(row[0]),
       amount: row[1],
       detail: row[2],
-      type: row[3]
+      type: row[3],
+      createdAt: formatCreationDateForClient(row[4])
     });
   }
 
