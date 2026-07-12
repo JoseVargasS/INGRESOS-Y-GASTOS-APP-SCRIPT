@@ -25,11 +25,10 @@ Los datos se quedan dentro de tu cuenta de Google. No hay servidor propio, base 
 
 | Archivo | Uso |
 | --- | --- |
-| `Code.gs` | Backend de Apps Script. Lee/escribe en Google Sheets, crea filas mensuales, calcula datos y expone funciones al frontend. |
+| `Código.js` | Backend de Apps Script. Lee/escribe en Google Sheets, crea filas mensuales, calcula datos y expone funciones al frontend. |
 | `Index.html` | Estructura principal de la app. Carga estilos, scripts, Chart.js, Font Awesome y Google Fonts. |
 | `Styles.html` | Estilos visuales, temas, responsive layout, tabla, skeleton loaders y graficos. |
 | `Scripts.html` | Logica del cliente: navegacion, formularios, tabla, busqueda, graficos, cache y llamadas a `google.script.run`. |
-| `icon.png` | Icono de la app/PWA. |
 
 ## Requisitos
 
@@ -42,12 +41,12 @@ Los datos se quedan dentro de tu cuenta de Google. No hay servidor propio, base 
 
 La app espera dos pestanias con estos nombres exactos:
 
-1. `INGRESOS Y GASTOS`
-2. `RESUMEN POR MES`
+1. `INCOME AND EXPENSES`
+2. `MONTHLY SUMMARY`
 
-Respeta mayusculas, espacios y tildes tal como aparecen arriba.
+Respeta mayusculas y espacios tal como aparecen arriba.
 
-### Hoja `INGRESOS Y GASTOS`
+### Hoja `INCOME AND EXPENSES`
 
 Fila 1:
 
@@ -71,7 +70,7 @@ Ejemplo:
 | 29/04/2026 | -69.00 | Internet | GASTO FRECUENTE |
 | 29/04/2026 | 176.33 | Interes prestamo | INGRESO NO FRECUENTE |
 
-### Hoja `RESUMEN POR MES`
+### Hoja `MONTHLY SUMMARY`
 
 Fila 1 recomendada:
 
@@ -83,10 +82,10 @@ Uso de columnas:
 
 - `MES`: primer dia del mes como fecha real. Ejemplo: `01/04/2026`.
 - `INGRESO FRECUENTE`: monto fijo mensual que editas desde la app.
-- `INGRESO NO FRECUENTE`: formula automatica desde `INGRESOS Y GASTOS`.
+- `INGRESO NO FRECUENTE`: formula automatica desde `INCOME AND EXPENSES`.
 - `TOTAL INGRESOS`: suma de ingreso frecuente + ingreso no frecuente.
-- `GASTO FRECUENTE`: formula automatica desde `INGRESOS Y GASTOS`.
-- `GASTO NO FRECUENTE`: formula automatica desde `INGRESOS Y GASTOS`.
+- `GASTO FRECUENTE`: formula automatica desde `INCOME AND EXPENSES`.
+- `GASTO NO FRECUENTE`: formula automatica desde `INCOME AND EXPENSES`.
 - `TOTAL GASTOS`: suma de gastos frecuentes + no frecuentes.
 - `NETO MENSUAL`: ingresos + gastos.
 - `NETO SIN ING FRECUENTE`: neto mensual sin contar el ingreso frecuente.
@@ -96,25 +95,24 @@ La app puede crear automaticamente las filas mensuales que falten. Para que lo h
 ## Iniciar desde cero con una hoja en blanco
 
 1. Crea un archivo nuevo en Google Sheets.
-2. Renombra la primera pestania como `INGRESOS Y GASTOS`.
-3. Crea una segunda pestania llamada `RESUMEN POR MES`.
-4. En `INGRESOS Y GASTOS`, escribe en la fila 1:
+2. Renombra la primera pestania como `INCOME AND EXPENSES`.
+3. Crea una segunda pestania llamada `MONTHLY SUMMARY`.
+4. En `INCOME AND EXPENSES`, escribe en la fila 1:
    `Fecha`, `Monto`, `Detalle`, `Tipo`.
-5. En `RESUMEN POR MES`, escribe en la fila 1:
+5. En `MONTHLY SUMMARY`, escribe en la fila 1:
    `MES`, `INGRESO FRECUENTE`, `INGRESO NO FRECUENTE`, `TOTAL INGRESOS`, `GASTO FRECUENTE`, `GASTO NO FRECUENTE`, `TOTAL GASTOS`, `NETO MENSUAL`, `NETO SIN ING FRECUENTE`.
 6. Selecciona la columna A de ambas hojas y aplica formato de fecha.
 7. Selecciona las columnas de montos y aplica formato moneda, por ejemplo soles `S/`.
 8. Abre `Extensiones > Apps Script`.
 9. Copia los archivos del proyecto en Apps Script:
-   - `Code.gs`
+   - `Código.js`
    - `Index.html`
    - `Styles.html`
    - `Scripts.html`
-10. Sube `icon.png` si quieres conservar el icono.
-11. Guarda el proyecto.
-12. Ejecuta o despliega la app web.
-13. Abre la app y entra al mes actual. Si la fila del mes no existe en `RESUMEN POR MES`, el backend la crea automaticamente.
-14. Registra tu primer movimiento desde la app.
+10. Guarda el proyecto.
+11. Ejecuta o despliega la app web.
+12. Abre la app y entra al mes actual. Si la fila del mes no existe en `MONTHLY SUMMARY`, el backend la crea automaticamente.
+13. Registra tu primer movimiento desde la app.
 
 Recomendacion: deja que la app cree la primera fila mensual. Es el camino mas limpio porque tambien inserta las formulas.
 
@@ -124,10 +122,10 @@ Si prefieres empezar con una fila ya visible en el resumen, creala completa deba
 | --- | --- |
 | A2 | `01/04/2026` |
 | B2 | `0` |
-| C2 | `=SUMIFS('INGRESOS Y GASTOS'!$B:$B,'INGRESOS Y GASTOS'!$A:$A,">="&$A2,'INGRESOS Y GASTOS'!$A:$A,"<="&EOMONTH($A2,0),'INGRESOS Y GASTOS'!$D:$D,"INGRESO NO FRECUENTE")` |
+| C2 | `=SUMIFS('INCOME AND EXPENSES'!$B:$B,'INCOME AND EXPENSES'!$A:$A,">="&$A2,'INCOME AND EXPENSES'!$A:$A,"<="&EOMONTH($A2,0),'INCOME AND EXPENSES'!$D:$D,"INGRESO NO FRECUENTE")` |
 | D2 | `=B2+C2` |
-| E2 | `=SUMIFS('INGRESOS Y GASTOS'!$B:$B,'INGRESOS Y GASTOS'!$A:$A,">="&$A2,'INGRESOS Y GASTOS'!$A:$A,"<="&EOMONTH($A2,0),'INGRESOS Y GASTOS'!$D:$D,"GASTO FRECUENTE")` |
-| F2 | `=SUMIFS('INGRESOS Y GASTOS'!$B:$B,'INGRESOS Y GASTOS'!$A:$A,">="&$A2,'INGRESOS Y GASTOS'!$A:$A,"<="&EOMONTH($A2,0),'INGRESOS Y GASTOS'!$D:$D,"GASTO NO FRECUENTE")` |
+| E2 | `=SUMIFS('INCOME AND EXPENSES'!$B:$B,'INCOME AND EXPENSES'!$A:$A,">="&$A2,'INCOME AND EXPENSES'!$A:$A,"<="&EOMONTH($A2,0),'INCOME AND EXPENSES'!$D:$D,"GASTO FRECUENTE")` |
+| F2 | `=SUMIFS('INCOME AND EXPENSES'!$B:$B,'INCOME AND EXPENSES'!$A:$A,">="&$A2,'INCOME AND EXPENSES'!$A:$A,"<="&EOMONTH($A2,0),'INCOME AND EXPENSES'!$D:$D,"GASTO NO FRECUENTE")` |
 | G2 | `=E2+F2` |
 | H2 | `=D2+G2` |
 | I2 | `=H2-B2` |
@@ -178,21 +176,21 @@ Usa exactamente estos valores en la columna `Tipo`:
 
 ## Como funciona el resumen mensual
 
-Cuando la app necesita un mes, `Code.gs` revisa `RESUMEN POR MES`.
+Cuando la app necesita un mes, `Código.js` revisa `MONTHLY SUMMARY`.
 
 Si el mes no existe:
 
 - Inserta una fila en orden cronologico.
 - Coloca el primer dia del mes en la columna A.
 - Inicializa `INGRESO FRECUENTE` en `0`.
-- Agrega formulas `SUMIFS` para calcular ingresos/gastos no frecuentes y gastos frecuentes desde `INGRESOS Y GASTOS`.
+- Agrega formulas `SUMIFS` para calcular ingresos/gastos no frecuentes y gastos frecuentes desde `INCOME AND EXPENSES`.
 - Copia el formato de una fila cercana cuando existe.
 
 Por eso no es necesario crear manualmente todos los meses del anio.
 
 ## Busqueda avanzada
 
-La busqueda avanzada consulta `INGRESOS Y GASTOS` y permite filtrar por:
+La busqueda avanzada consulta `INCOME AND EXPENSES` y permite filtrar por:
 
 - Texto en detalle o tipo.
 - Monto minimo y maximo usando valor absoluto.
@@ -202,7 +200,7 @@ Para proteger el rendimiento del DOM, la busqueda devuelve hasta 150 resultados 
 
 ## Graficos
 
-Los graficos usan los datos de `RESUMEN POR MES`.
+Los graficos usan los datos de `MONTHLY SUMMARY`.
 
 La vista de analisis permite revisar:
 
@@ -217,11 +215,11 @@ En movil, los graficos reducen densidad visual y solo usan desplazamiento horizo
 ## Mantenimiento
 
 - No cambies los nombres de las dos hojas principales.
-- No elimines las columnas A:D de `INGRESOS Y GASTOS`.
-- No elimines las columnas A:I de `RESUMEN POR MES`.
+- No elimines las columnas A:D de `INCOME AND EXPENSES`.
+- No elimines las columnas A:I de `MONTHLY SUMMARY`.
 - Puedes ordenar o insertar movimientos desde la app; el backend conserva el orden cronologico al crear nuevos registros.
 - Si editas datos directamente en Sheets, respeta la convencion de signos y tipos.
-- Si un grafico aparece vacio, revisa que `RESUMEN POR MES` tenga fechas reales en la columna A y valores/formulas en las columnas B:I.
+- Si un grafico aparece vacio, revisa que `MONTHLY SUMMARY` tenga fechas reales en la columna A y valores/formulas en las columnas B:I.
 
 ## Solucion de problemas
 
@@ -229,12 +227,12 @@ En movil, los graficos reducen densidad visual y solo usan desplazamiento horizo
 
 Verifica que existan exactamente:
 
-- `INGRESOS Y GASTOS`
-- `RESUMEN POR MES`
+- `INCOME AND EXPENSES`
+- `MONTHLY SUMMARY`
 
 ### No aparecen datos del mes
 
-Revisa que las fechas en `INGRESOS Y GASTOS` sean fechas reales de Sheets, no texto.
+Revisa que las fechas en `INCOME AND EXPENSES` sean fechas reales de Sheets, no texto.
 
 ### Los totales no cuadran
 
@@ -246,7 +244,7 @@ Confirma que:
 
 ### El resumen no genera formulas
 
-Verifica que `RESUMEN POR MES` tenga una fila de encabezados y que la celda de la columna A contenga la palabra `MES`.
+Verifica que `MONTHLY SUMMARY` tenga una fila de encabezados y que la celda de la columna A contenga la palabra `MES`.
 
 ### Cambie codigo pero sigo viendo la version anterior
 
@@ -292,7 +290,7 @@ El archivo JavaScript esta organizado en secciones claras:
 - `buildChartContainer(...)` - Construye contenedor HTML del grafico
 - `getInterannualChartOptions(...)` - Obtiene opciones del grafico
 
-### Code.gs - Backend optimizado
+### Código.js - Backend optimizado
 
 #### Funciones Helper
 - `findHeaderRow(data, defaultRow)` - Encuentra fila de encabezado en resumen

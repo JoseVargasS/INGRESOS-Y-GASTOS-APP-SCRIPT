@@ -1408,6 +1408,44 @@
     color: var(--text-primary);
   }
 
+  /* Table State Rows */
+  .table-state-row td {
+    text-align: center;
+    padding: 30px;
+  }
+
+  .table-state-row td.error {
+    color: var(--accent-red);
+  }
+
+  .table-state-row td.empty {
+    color: var(--text-secondary);
+    padding: 40px;
+  }
+
+  .table-state-icon {
+    font-size: 24px;
+    margin-bottom: 10px;
+    display: inline-block;
+  }
+
+  .table-state-icon.lg {
+    font-size: 32px;
+    margin-bottom: 15px;
+    opacity: 0.5;
+  }
+
+  .date-cell-nowrap {
+    white-space: nowrap;
+  }
+
+  /* Summary Empty State */
+  .summary-empty-state {
+    text-align: center;
+    padding: 30px;
+    color: var(--text-secondary);
+  }
+
   /* Action Buttons */
   .action-buttons-wrapper {
     display: flex;

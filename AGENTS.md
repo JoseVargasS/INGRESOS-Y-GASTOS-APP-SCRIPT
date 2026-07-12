@@ -10,24 +10,23 @@ Bucks Manager is a personal finance web application built with Google Apps Scrip
 
 | File | Purpose |
 |------|---------|
-| `Code.gs` | Backend in Google Apps Script. Reads/writes to Google Sheets, creates monthly rows, calculates data, and exposes functions to the frontend. |
+| `Código.js` | Backend in Google Apps Script. Reads/writes to Google Sheets, creates monthly rows, calculates data, and exposes functions to the frontend. |
 | `Index.html` | Main app structure. Loads styles, scripts, Chart.js, Font Awesome, and Google Fonts. |
 | `Styles.html` | Visual styles, themes, responsive layout, table, skeleton loaders, and charts. |
 | `Scripts.html` | Client logic: navigation, forms, table, search, charts, cache, and calls to `google.script.run`. |
-| `icon.png` | App/PWA icon. |
 
 ### Google Sheets Structure
 
 The app expects two sheets with exact names:
 
-1. **INGRESOS Y GASTOS** - Main transaction sheet
+1. **INCOME AND EXPENSES** - Main transaction sheet
    - Column A: Date (Google Sheets date format)
    - Column B: Amount (positive for income, negative for expenses)
    - Column C: Detail (free description)
    - Column D: Type (one of the four supported types)
    - Column E: Creation timestamp (auto-generated for new transactions)
 
-2. **RESUMEN POR MES** - Monthly summary sheet
+2. **MONTHLY SUMMARY** - Monthly summary sheet
    - Column A: Month (first day of month as date)
    - Column B: Frequent Income (manual)
    - Column C: Non-Frequent Income (auto-formula)
@@ -81,7 +80,7 @@ The app expects two sheets with exact names:
 - `buildChartContainer(...)` - Builds chart HTML container
 - `getInterannualChartOptions(...)` - Gets chart options configuration
 
-### Code.gs - Backend
+### Código.js - Backend
 
 #### Helper Functions
 - `findHeaderRow(data, defaultRow)` - Finds header row in summary sheet
@@ -95,7 +94,7 @@ The app expects two sheets with exact names:
 
 2. **HTML includes** - You can create additional HTML files and use the `include()` function to include them as partials.
 
-3. **File naming** - Use exact sheet names as specified (INGRESOS Y GASTOS, RESUMEN POR MES).
+3. **File naming** - Use exact sheet names as specified (INCOME AND EXPENSES, MONTHLY SUMMARY).
 
 ### Code Style
 
@@ -148,14 +147,14 @@ The app expects two sheets with exact names:
 
 ### Common Issues
 
-1. **Sheet not found errors** - Verify exact sheet names (case-sensitive, with accents)
+1. **Sheet not found errors** - Verify exact sheet names (case-sensitive)
 2. **Date parsing issues** - Ensure dates are real Google Sheets dates, not text
 3. **Formula errors** - Check that summary sheet has proper header row with "MES"
 4. **Chart not rendering** - Verify Chart.js and ChartDataLabels are loaded
 
 ### Debugging
 
-1. Use `console.log()` in Code.gs for server-side debugging
+1. Use `console.log()` in Código.js for server-side debugging
 2. Use browser DevTools for client-side debugging
 3. Check the Apps Script execution log for errors
 
@@ -167,9 +166,12 @@ The app expects two sheets with exact names:
 2. **Scripts.html** - Extracted chart configuration factories (tooltips, legends, datalabels)
 3. **Scripts.html** - Split `renderCharts()` into 7 focused functions
 4. **Scripts.html** - Created date helper functions (`formatDateToISO`, `parseSpanishDate`, `transactionDateToISO`)
-5. **Code.gs** - Consolidated `addTransaction` and `addTransactionOptimized` using `_addTransactionCore()`
-6. **Code.gs** - Extracted `findHeaderRow()` helper for header row detection
-7. **Styles.html** - Removed duplicate CSS properties
+5. **Código.js** - Consolidated `addTransaction` and `addTransactionOptimized` using `_addTransactionCore()`
+6. **Código.js** - Extracted `findHeaderRow()` helper for header row detection
+7. **Código.js** - Removed dead code (`addTransaction`, `moveTransactionUp/Down`, `getChartData`, `getMonthStats`)
+8. **Código.js** - Updated sheet names to English (`INCOME AND EXPENSES`, `MONTHLY SUMMARY`)
+9. **Styles.html** - Removed duplicate CSS properties
+10. **Styles.html** - Extracted inline styles from Scripts.html into CSS classes
 
 ### Benefits
 

@@ -91,9 +91,9 @@ function getTransactions(month, year) {
     console.error("Error al asegurar mes: " + e.toString());
   }
 
-  var sheet = getSheetByName('INGRESOS Y GASTOS');
+  var sheet = getSheetByName('INCOME AND EXPENSES');
   if (!sheet) {
-    throw new Error("No se encontró la hoja 'INGRESOS Y GASTOS'");
+    throw new Error("No se encontró la hoja 'INCOME AND EXPENSES'");
   }
 
   var lastRow = sheet.getLastRow();
@@ -164,9 +164,9 @@ function getTransactions(month, year) {
  * @returns {Array} Lista completa de transacciones del rango
  */
 function getTransactionsForExport(startDate, endDate) {
-  var sheet = getSheetByName('INGRESOS Y GASTOS');
+  var sheet = getSheetByName('INCOME AND EXPENSES');
   if (!sheet) {
-    throw new Error("No se encontro la hoja 'INGRESOS Y GASTOS'");
+    throw new Error("No se encontro la hoja 'INCOME AND EXPENSES'");
   }
 
   var lastRow = sheet.getLastRow();
@@ -209,9 +209,9 @@ function getTransactionsForExport(startDate, endDate) {
  * @returns {Object} Limites de fecha en formato YYYY-MM-DD
  */
 function getTransactionDateBounds() {
-  var sheet = getSheetByName('INGRESOS Y GASTOS');
+  var sheet = getSheetByName('INCOME AND EXPENSES');
   if (!sheet) {
-    throw new Error("No se encontro la hoja 'INGRESOS Y GASTOS'");
+    throw new Error("No se encontro la hoja 'INCOME AND EXPENSES'");
   }
 
   var lastRow = sheet.getLastRow();
@@ -304,8 +304,8 @@ function _addTransactionCore(transactionData) {
     console.error("Error al asegurar mes al agregar: " + e.toString());
   }
 
-  var sheet = getSheetByName('INGRESOS Y GASTOS');
-  if (!sheet) throw new Error("No se encontró la hoja 'INGRESOS Y GASTOS'");
+  var sheet = getSheetByName('INCOME AND EXPENSES');
+  if (!sheet) throw new Error("No se encontró la hoja 'INCOME AND EXPENSES'");
 
   if (!sheet.getRange(1, 5).getValue()) {
     sheet.getRange(1, 5).setValue('HORA DE CREACIÓN');
@@ -315,15 +315,6 @@ function _addTransactionCore(transactionData) {
   SpreadsheetApp.flush();
 
   return { dateObj: dateObj, targetRow: targetRow, sheet: sheet };
-}
-
-/**
- * Agrega una nueva transacción cronológicamente
- * @param {Object} transactionData - Datos de la transacción
- */
-function addTransaction(transactionData) {
-  _addTransactionCore(transactionData);
-  return { success: true, message: 'Transacción agregada correctamente' };
 }
 
 /**
@@ -364,8 +355,8 @@ function addTransactionOptimized(transactionData, month, year) {
  * @param {number} rowId - ID de la fila a eliminar
  */
 function deleteTransaction(rowId) {
-  var sheet = getSheetByName('INGRESOS Y GASTOS');
-  if (!sheet) throw new Error("No se encontró la hoja 'INGRESOS Y GASTOS'");
+  var sheet = getSheetByName('INCOME AND EXPENSES');
+  if (!sheet) throw new Error("No se encontró la hoja 'INCOME AND EXPENSES'");
 
   try {
     sheet.deleteRow(rowId);
@@ -376,8 +367,8 @@ function deleteTransaction(rowId) {
 }
 
 function editTransaction(rowId, transactionData) {
-  var sheet = getSheetByName('INGRESOS Y GASTOS');
-  if (!sheet) throw new Error("No se encontró la hoja 'INGRESOS Y GASTOS'");
+  var sheet = getSheetByName('INCOME AND EXPENSES');
+  if (!sheet) throw new Error("No se encontró la hoja 'INCOME AND EXPENSES'");
 
   var parts = transactionData.date.split('-');
   var dateObj = new Date(parts[0], parts[1] - 1, parts[2]);
@@ -417,33 +408,6 @@ function editTransaction(rowId, transactionData) {
   }
 }
 
-/**
- * Funciones para mover transacciones arriba/abajo intercambiando filas
- */
-function moveTransactionUp(rowId) {
-  var sheet = getSheetByName('INGRESOS Y GASTOS');
-  if (!sheet) throw new Error("No se encontró la hoja 'INGRESOS Y GASTOS'");
-  rowId = parseInt(rowId);
-  var target = rowId - 1;
-  // Solo se pueden mover a partir de la fila 3 (para ignorar intercambiar con cabecera en fila 1 y 2 que puede estar mal)
-  // Pero la tabla de transacciones de Apps Script asume header en la 1.
-  if (target < 2) return { success: false, message: 'Ya está en la primera fila' };
-
-  swapRows(sheet, rowId, target);
-  return { success: true, message: 'Movido arriba', newRowId: target };
-}
-
-function moveTransactionDown(rowId) {
-  var sheet = getSheetByName('INGRESOS Y GASTOS');
-  if (!sheet) throw new Error("No se encontró la hoja 'INGRESOS Y GASTOS'");
-  rowId = parseInt(rowId);
-  var target = rowId + 1;
-  if (target > sheet.getLastRow()) return { success: false, message: 'Ya está en la última fila' };
-
-  swapRows(sheet, rowId, target);
-  return { success: true, message: 'Movido abajo', newRowId: target };
-}
-
 function swapRows(sheet, rowId1, rowId2) {
   // Obtener y setear Date, Amount, Detail, Type y hora de creación (Columnas A - E)
   var range1 = sheet.getRange(rowId1, 1, 1, 5);
@@ -461,8 +425,8 @@ function swapRows(sheet, rowId1, rowId2) {
  * Función para swap rápido de filas
  */
 function swapTransactions(rowId1, rowId2) {
-  var sheet = getSheetByName('INGRESOS Y GASTOS');
-  if (!sheet) throw new Error("No se encontró la hoja 'INGRESOS Y GASTOS'");
+  var sheet = getSheetByName('INCOME AND EXPENSES');
+  if (!sheet) throw new Error("No se encontró la hoja 'INCOME AND EXPENSES'");
   swapRows(sheet, parseInt(rowId1), parseInt(rowId2));
   return { success: true };
 }
@@ -472,9 +436,9 @@ function swapTransactions(rowId1, rowId2) {
  * @returns {Array} Resumen por mes
  */
 function getMonthlySummaryData() {
-  var sheet = getSheetByName('RESUMEN POR MES');
+  var sheet = getSheetByName('MONTHLY SUMMARY');
   if (!sheet) {
-    console.error('Hoja RESUMEN POR MES no encontrada');
+    console.error("Hoja 'MONTHLY SUMMARY' no encontrada");
     return [];
   }
 
@@ -529,12 +493,12 @@ function getMonthlySummaryData() {
 }
 
 /**
- * Asegura que exista una fila para el mes/año en RESUMEN POR MES
+ * Asegura que exista una fila para el mes/año en MONTHLY SUMMARY
  * @param {number} month - Mes (0-11)
  * @param {number} year - Año
  */
 function ensureMonthlyRowExists(month, year) {
-  var sheet = getSheetByName('RESUMEN POR MES');
+  var sheet = getSheetByName('MONTHLY SUMMARY');
   if (!sheet) return;
 
   var data = sheet.getDataRange().getValues();
@@ -582,10 +546,10 @@ function ensureMonthlyRowExists(month, year) {
     // Establecer fórmulas dinámicas basadas en la fecha de la Columna A
     var r = insertIndex;
     var formulas = [[
-      "=SUMIFS('INGRESOS Y GASTOS'!$B:$B, 'INGRESOS Y GASTOS'!$A:$A, \">=\"&$A" + r + ", 'INGRESOS Y GASTOS'!$A:$A, \"<=\"&EOMONTH($A" + r + ", 0), 'INGRESOS Y GASTOS'!$D:$D, \"INGRESO NO FRECUENTE\")", // C (Ing. No Frec)
+      "=SUMIFS('INCOME AND EXPENSES'!$B:$B, 'INCOME AND EXPENSES'!$A:$A, \">=\"&$A" + r + ", 'INCOME AND EXPENSES'!$A:$A, \"<=\"&EOMONTH($A" + r + ", 0), 'INCOME AND EXPENSES'!$D:$D, \"INGRESO NO FRECUENTE\")", // C (Ing. No Frec)
       "=B" + r + "+C" + r, // D (Total Ing)
-      "=SUMIFS('INGRESOS Y GASTOS'!$B:$B, 'INGRESOS Y GASTOS'!$A:$A, \">=\"&$A" + r + ", 'INGRESOS Y GASTOS'!$A:$A, \"<=\"&EOMONTH($A" + r + ", 0), 'INGRESOS Y GASTOS'!$D:$D, \"GASTO FRECUENTE\")", // E (Gasto Frec)
-      "=SUMIFS('INGRESOS Y GASTOS'!$B:$B, 'INGRESOS Y GASTOS'!$A:$A, \">=\"&$A" + r + ", 'INGRESOS Y GASTOS'!$A:$A, \"<=\"&EOMONTH($A" + r + ", 0), 'INGRESOS Y GASTOS'!$D:$D, \"GASTO NO FRECUENTE\")", // F (Gasto No Frec)
+      "=SUMIFS('INCOME AND EXPENSES'!$B:$B, 'INCOME AND EXPENSES'!$A:$A, \">=\"&$A" + r + ", 'INCOME AND EXPENSES'!$A:$A, \"<=\"&EOMONTH($A" + r + ", 0), 'INCOME AND EXPENSES'!$D:$D, \"GASTO FRECUENTE\")", // E (Gasto Frec)
+      "=SUMIFS('INCOME AND EXPENSES'!$B:$B, 'INCOME AND EXPENSES'!$A:$A, \">=\"&$A" + r + ", 'INCOME AND EXPENSES'!$A:$A, \"<=\"&EOMONTH($A" + r + ", 0), 'INCOME AND EXPENSES'!$D:$D, \"GASTO NO FRECUENTE\")", // F (Gasto No Frec)
       "=E" + r + "+F" + r, // G (Total Gastos)
       "=D" + r + "+G" + r, // H (Neto Mensual)
       "=H" + r + "-B" + r  // I (Total sin Ing Frec)
@@ -601,54 +565,12 @@ function ensureMonthlyRowExists(month, year) {
 }
 
 /**
- * Alias para getMonthlySummaryData (compatibilidad con gráficos)
- */
-function getChartData() {
-  return getMonthlySummaryData();
-}
-
-/**
- * Obtiene estadísticas del mes actual
- * @param {number} month - Mes (0-11)
- * @param {number} year - Año
- * @returns {Object} Estadísticas
- */
-function getMonthStats(month, year) {
-  var transactions = getTransactions(month, year);
-
-  var totalIncome = 0;
-  var totalExpense = 0;
-  var countIncome = 0;
-  var countExpense = 0;
-
-  transactions.forEach(function (tx) {
-    var amt = Number(tx.amount);
-    if (amt > 0) {
-      totalIncome += amt;
-      countIncome++;
-    } else {
-      totalExpense += amt;
-      countExpense++;
-    }
-  });
-
-  return {
-    totalIncome: totalIncome,
-    totalExpense: totalExpense,
-    balance: totalIncome + totalExpense,
-    countIncome: countIncome,
-    countExpense: countExpense,
-    countTotal: transactions.length
-  };
-}
-
-/**
  * Realiza una búsqueda avanzada de transacciones
  * @param {Object} filters - Filtros { text, minAmount, maxAmount, startDate, endDate }
  * @returns {Array} Resultados
  */
 function getAdvancedTransactions(filters) {
-  var sheet = getSheetByName('INGRESOS Y GASTOS');
+  var sheet = getSheetByName('INCOME AND EXPENSES');
   if (!sheet) return [];
 
   var lastRow = sheet.getLastRow();
@@ -708,8 +630,8 @@ function getAdvancedTransactions(filters) {
  * @param {number} amount - Nuevo monto
  */
 function updateFreqIncome(monthStr, amount) {
-  var sheet = getSheetByName('RESUMEN POR MES');
-  if (!sheet) throw new Error('Hoja RESUMEN POR MES no encontrada');
+  var sheet = getSheetByName('MONTHLY SUMMARY');
+  if (!sheet) throw new Error("Hoja 'MONTHLY SUMMARY' no encontrada");
 
   var data = sheet.getDataRange().getValues();
   var headerRowIndex = findHeaderRow(data, 3);

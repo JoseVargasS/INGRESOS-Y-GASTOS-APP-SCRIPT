@@ -10,11 +10,10 @@
   var currentMonth = 0;
   var transactionCache = [];
   var summaries = [];
-  var currentSort = { col: "date", order: "desc" };
+  const currentSort = { col: "date", order: "desc" };
   var deleteRowId = null;
   var myChart = null;
   var isSearchActive = false;
-  var searchResults = [];
   var searchText = ""; // Texto de búsqueda actual para resaltado
   var pendingExportFormat = "xlsx";
   var exportRangeMode = "dates";
@@ -199,7 +198,6 @@
 
   // DOM Elements
   const tabButtons = document.querySelectorAll(".nav-item");
-  const contentViews = document.querySelectorAll(".content-view");
   const fabAdd = document.getElementById("fabAdd");
   const fabUndo = document.getElementById("fabUndo");
   const addModal = document.getElementById("addModal");
@@ -1368,9 +1366,9 @@
         const tbody = document.getElementById("transactionsTableBody");
         if (tbody) {
           tbody.innerHTML = `
-          <tr>
-            <td colspan="5" style="text-align:center; padding: 30px; color: var(--accent-red);">
-              <i class="fa-solid fa-exclamation-circle" style="font-size: 24px; margin-bottom: 10px;"></i><br>
+          <tr class="table-state-row">
+            <td colspan="5" class="error">
+              <i class="fa-solid fa-exclamation-circle table-state-icon"></i><br>
               Error al cargar datos
             </td>
           </tr>
@@ -1403,9 +1401,9 @@
 
     if (!filteredData || filteredData.length === 0) {
       tbody.innerHTML = `
-      <tr>
-        <td colspan="5" style="text-align:center; padding: 40px; color: var(--text-secondary);">
-          <i class="fa-solid fa-inbox" style="font-size: 32px; margin-bottom: 15px; opacity: 0.5;"></i><br>
+      <tr class="table-state-row">
+        <td colspan="5" class="empty">
+          <i class="fa-solid fa-inbox table-state-icon lg"></i><br>
           No hay movimientos en este mes
         </td>
       </tr>
@@ -1464,7 +1462,7 @@
     `;
 
       row.innerHTML = `
-      <td style="white-space: nowrap;">
+      <td class="date-cell-nowrap">
         <i class="fa-solid fa-grip-lines drag-handle"></i>
         ${tx.date}
       </td>
@@ -2251,7 +2249,7 @@
     const tbodyElement = document.getElementById("summaryTableBody");
     if (!data || data.length === 0) {
       if (tbodyElement) {
-        tbodyElement.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--text-secondary);">No hay datos</td></tr>';
+        tbodyElement.innerHTML = '<tr><td colspan="7" class="summary-empty-state">No hay datos</td></tr>';
       }
       return;
     }
